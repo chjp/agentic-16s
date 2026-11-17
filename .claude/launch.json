@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "cwd": "/Users/chjp007/Desktop/Work/proj4newjob/agentic-16s",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "--with", "streamlit", "--with", "psycopg[binary]", "--with", "pandas",
+                      "streamlit", "run", "dashboard/app.py", "--server.address", "localhost",
+                      "--server.port", "8501", "--server.headless", "true"],
+      "port": 8501
+    },
+    {
+      "name": "dashboard-attach",
+      "url": "http://localhost:8501",
+      "port": 8501
+    }
+  ]
+}

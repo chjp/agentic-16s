@@ -1,0 +1,37 @@
+.env
+
+# Internal dev notes, not for readers; context goes in commit messages instead
+phase0/
+progress/
+
+# Per-study folders stay local: downloads, sample sheets, logs and QC are rebuilt by running the
+# pipeline, so only studies/README.md and studies/LESSONS.md are committed
+studies/*/
+
+# ML outputs (per-sample predictions) are rebuilt from the database
+ml/results/
+
+# Large downloads (FASTQ, reference databases)
+data/
+
+# Nextflow launch files, in case a pipeline is ever started from inside the repo
+pipeline/.nextflow*
+pipeline/work/
+
+# Terraform: local state, provider cache, build zips and the IDs in terraform.tfvars stay local
+infra/.terraform/
+infra/.build/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/terraform.tfvars
+
+# Python environments and tool caches
+.venv/
+.venv-py39/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Kept out of the repo, which will be public later: personal account details, and a separate private repo
+docs/gcp-handoff.md
+paper-discover2sra/

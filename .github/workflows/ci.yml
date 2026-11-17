@@ -1,0 +1,60 @@
+# Layers L0-L2 of docs/ci-cd-plan.md on every push and pull request: the same scripts/check.sh that
+# runs on the Mac, plus a fresh PostgreSQL so the database migrations are applied from zero and the
+# database tests run instead of skipping. No network to ENA/NCBI, no LLM calls, no cloud credentials.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: agentic16s
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d agentic16s"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Throwaway database inside the job; not a secret
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/agentic16s
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.0"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.17.2"
+          terraform_wrapper: false
+
+      - name: Apply all database migrations to an empty database (twice, to prove they are idempotent)
+        run: |
+          uv run --locked --group db python db/migrate.py
+          uv run --locked --group db python db/migrate.py
+
+      - name: All checks (scripts/check.sh)
+        run: scripts/check.sh

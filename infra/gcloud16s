@@ -1,0 +1,16 @@
+#!/bin/bash
+# gcloud for this project only. Use it instead of plain `gcloud`:  infra/gcloud16s <any gcloud arguments>
+#
+# Why it exists: a plain `gcloud auth login` did not stick on the owner's Mac (2026-11-15). An IDE's Google
+# extension called `gcloud config config-helper` with its own credential file a few seconds after every
+# sign-in, and gcloud then saved that credential (another Google account) over the active account in
+# ~/.config/gcloud. Every later command ran as the wrong account.
+#
+# What it does:
+#   * keeps this project's gcloud settings in their own folder, which other tools do not touch
+#   * signs in with the Application Default Credentials that Terraform already uses, so there is one sign-in:
+#       gcloud auth application-default login
+set -euo pipefail
+export CLOUDSDK_CONFIG="${AGENTIC16S_GCLOUD_CONFIG:-$HOME/.config/gcloud-agentic16s}"
+export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE="${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}"
+exec gcloud "$@"

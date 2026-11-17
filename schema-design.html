@@ -1,0 +1,1221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentic-16s · Schema Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Database schema design for agentic-16s. The design lives in the SCHEMA array in the script below;
+   the page renders it and lets the reader attach feedback to any table or field (saved in this browser),
+   then copy or download all feedback as Markdown. */
+:root {
+  --bg: #f2f3f4; --surface: #ffffff; --surface-2: #e9ebed; --ink: #15181c; --ink-2: #444b54; --muted: #6a717a;
+  --line: #d9dde1; --line-strong: #b4bac1; --link: #2d68ad; --focus: #2d68ad; --code-bg: #eef0f2;
+  --raw: #875600; --raw-bg: #f6e9cc; --core: #1d6f38; --core-bg: #dcefe1; --bio: #6a3fa0; --bio-bg: #ebe2f5;
+  --ops: #2d68ad; --ops-bg: #d9e5f3; --ana: #9c3030; --ana-bg: #f5dede;
+  --ok: #1d6f38; --chg: #875600; --rm: #9c3030; --q: #2d68ad;
+  --f-body: "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-head: "IBM Plex Sans Condensed", "IBM Plex Sans", "Arial Narrow", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121416; --surface: #1a1d20; --surface-2: #24282c; --ink: #eceef0; --ink-2: #c1c6cc; --muted: #949ba3;
+    --line: #31363b; --line-strong: #4a5057; --link: #6ea4e8; --focus: #6ea4e8; --code-bg: #23272b;
+    --raw: #e8b85a; --raw-bg: #3a2e14; --core: #72c98a; --core-bg: #1d3324; --bio: #c4a3ef; --bio-bg: #2e2340;
+    --ops: #6ea4e8; --ops-bg: #1d3046; --ana: #f09a9a; --ana-bg: #3f2222;
+    --ok: #72c98a; --chg: #e8b85a; --rm: #f09a9a; --q: #6ea4e8;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121416; --surface: #1a1d20; --surface-2: #24282c; --ink: #eceef0; --ink-2: #c1c6cc; --muted: #949ba3;
+  --line: #31363b; --line-strong: #4a5057; --link: #6ea4e8; --focus: #6ea4e8; --code-bg: #23272b;
+  --raw: #e8b85a; --raw-bg: #3a2e14; --core: #72c98a; --core-bg: #1d3324; --bio: #c4a3ef; --bio-bg: #2e2340;
+  --ops: #6ea4e8; --ops-bg: #1d3046; --ana: #f09a9a; --ana-bg: #3f2222;
+  --ok: #72c98a; --chg: #e8b85a; --rm: #f09a9a; --q: #6ea4e8;
+}
+* { box-sizing: border-box; }
+html { scroll-padding-top: 70px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--f-body); -webkit-font-smoothing: antialiased; }
+a { color: var(--link); text-underline-offset: 2px; }
+button, select, textarea, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+h1, h2, h3 { font-family: var(--f-head); line-height: 1.2; margin: 0; text-wrap: balance; }
+h1 { font-size: 1.7rem; font-weight: 700; letter-spacing: -.01em; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.08rem; font-weight: 600; }
+p { margin: 0; }
+code, .mono { font-family: var(--f-mono); font-size: .84em; }
+code { background: var(--code-bg); padding: .08em .35em; border-radius: 4px; overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+.eyebrow { font-family: var(--f-head); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px 100px; }
+header.top { padding: 28px 0 14px; }
+header.top p { color: var(--ink-2); margin-top: 6px; max-width: 78ch; }
+.btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 6px; padding: 5px 11px; cursor: pointer; font-size: .86rem; white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.btn.small { padding: 2px 8px; font-size: .78rem; }
+
+/* sticky toolbar */
+.bar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line); }
+.bar .in { max-width: 1180px; margin: 0 auto; padding: 8px 20px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bar input[type=search] { flex: 1 1 200px; min-width: 0; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 6px; padding: 5px 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 999px; padding: 3px 10px; font-size: .8rem; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.count { display: inline-block; min-width: 1.4em; padding: 0 .4em; border-radius: 999px; background: var(--chg); color: var(--surface); font-size: .74rem; text-align: center; margin-left: 4px; }
+
+section { margin-top: 30px; }
+section > h2 { margin-bottom: 10px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.prose { padding: 16px 18px; }
+.prose p + p, .prose p + ul, .prose ul + p { margin-top: 8px; }
+.prose ul { margin: 6px 0 0; padding-left: 20px; }
+.prose li + li { margin-top: 4px; }
+
+/* layer map */
+.map { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.layer { border-radius: 10px; padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); border-top: 4px solid var(--c); }
+.layer h3 { color: var(--c); }
+.layer p { font-size: .84rem; color: var(--ink-2); margin: 4px 0 8px; }
+.layer a { display: block; font-family: var(--f-mono); font-size: .8rem; text-decoration: none; padding: 2px 0; color: var(--ink); }
+.layer a:hover { color: var(--link); text-decoration: underline; }
+.L-raw { --c: var(--raw); --cb: var(--raw-bg); } .L-core { --c: var(--core); --cb: var(--core-bg); }
+.L-bio { --c: var(--bio); --cb: var(--bio-bg); } .L-ops { --c: var(--ops); --cb: var(--ops-bg); } .L-analysis { --c: var(--ana); --cb: var(--ana-bg); }
+
+.flow { padding: 14px 16px; overflow-x: auto; }
+.flow svg { display: block; min-width: 760px; width: 100%; height: auto; }
+.flow text { font-family: var(--f-mono); font-size: 11px; fill: var(--ink); }
+.flow .lbl { font-family: var(--f-head); font-size: 12px; fill: var(--muted); letter-spacing: .06em; }
+.flow rect.t { fill: var(--surface); stroke: var(--line-strong); }
+.flow path { fill: none; stroke: var(--line-strong); stroke-width: 1.2; }
+
+/* tables */
+.tbl { margin-top: 18px; border-left: 4px solid var(--c); }
+.tbl > header { padding: 14px 18px 10px; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.tbl > header h3 { font-family: var(--f-mono); font-size: 1.02rem; font-weight: 500; }
+.tbl > header h3 .s { color: var(--c); }
+.tag { font-size: .72rem; font-family: var(--f-head); letter-spacing: .05em; text-transform: uppercase; padding: 1px 8px; border-radius: 999px; background: var(--cb); color: var(--c); }
+.tbl .desc { padding: 0 18px; color: var(--ink-2); max-width: 90ch; }
+.tbl .why { padding: 8px 18px 0; color: var(--ink-2); font-size: .9rem; max-width: 90ch; }
+.tbl .why b { color: var(--ink); font-weight: 600; }
+.tbl .tactions { padding: 10px 18px 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+table.f { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.f th { text-align: left; font-family: var(--f-head); font-weight: 600; font-size: .76rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+  padding: 6px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface-2); }
+table.f td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.f td.n { font-family: var(--f-mono); font-size: .84rem; white-space: nowrap; font-weight: 500; }
+table.f td.ty { font-family: var(--f-mono); font-size: .78rem; color: var(--ink-2); white-space: nowrap; }
+table.f td.k { white-space: nowrap; }
+table.f td.ex { font-family: var(--f-mono); font-size: .78rem; color: var(--ink-2); max-width: 220px; overflow-wrap: anywhere; }
+table.f td.fb { width: 1%; white-space: nowrap; text-align: right; }
+.key { display: inline-block; font-family: var(--f-mono); font-size: .7rem; padding: 0 5px; border-radius: 4px; border: 1px solid var(--line-strong); margin: 0 3px 3px 0; color: var(--ink-2); }
+.key.pk { border-color: var(--c); color: var(--c); font-weight: 500; }
+.key.fk { border-style: dashed; }
+tr.has-fb td.n::before { content: "●"; margin-right: 5px; font-size: .7rem; vertical-align: 1px; }
+tr.fb-ok td.n::before { color: var(--ok); } tr.fb-change td.n::before { color: var(--chg); }
+tr.fb-remove td.n::before { color: var(--rm); } tr.fb-question td.n::before { color: var(--q); }
+tr.fb-remove td.n { text-decoration: line-through; text-decoration-color: var(--rm); }
+tr.editor td { background: var(--surface-2); }
+.ed { display: grid; gap: 8px; }
+.ed .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ed select, .ed textarea, .ed input { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 6px; padding: 5px 8px; }
+.ed textarea { width: 100%; min-height: 64px; resize: vertical; }
+.tnote { margin: 0 18px 14px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); display: none; }
+.tnote.open { display: block; }
+.saved { font-size: .78rem; color: var(--ok); }
+.fbsum { font-size: .82rem; color: var(--ink-2); padding: 0 18px 10px; }
+.fbsum div { margin-top: 4px; }
+
+/* questions */
+.q { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.q:last-child { border-bottom: 0; }
+.q h3 { font-size: 1rem; }
+.q p { color: var(--ink-2); margin-top: 4px; max-width: 90ch; }
+.q .pick { margin-top: 6px; font-size: .9rem; }
+.q .pick b { color: var(--core); }
+
+/* feedback drawer */
+dialog { border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--ink); width: min(820px, calc(100vw - 32px)); padding: 0; }
+dialog::backdrop { background: rgb(0 0 0 / .35); }
+dialog header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+dialog header h2 { flex: 1; font-size: 1.1rem; }
+dialog pre { margin: 0; padding: 14px 18px; max-height: 60vh; overflow: auto; font-family: var(--f-mono); font-size: .8rem; white-space: pre-wrap; background: var(--code-bg); }
+dialog .foot { padding: 10px 18px; font-size: .84rem; color: var(--muted); }
+.hidden { display: none !important; }
+
+@media (max-width: 760px) {
+  .wrap, .bar .in { padding-left: 16px; padding-right: 16px; }
+  table.f thead { display: none; }
+  table.f, table.f tbody, table.f tr, table.f td { display: block; width: 100%; }
+  table.f tr { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  table.f td { border: 0; padding: 2px 0; max-width: none; white-space: normal; }
+  table.f td.fb { text-align: left; padding-top: 6px; }
+  table.f td.ex:not(:empty)::before { content: "e.g. "; color: var(--muted); }
+}
+</style>
+</head>
+<body>
+<div class="bar"><div class="in">
+  <input type="search" id="q" placeholder="Filter tables and fields (e.g. primer, label, run_accession)" aria-label="Filter tables and fields">
+  <div class="chips" id="layers"></div>
+  <button class="btn primary" id="openfb">Feedback<span class="count" id="fbcount">0</span></button>
+</div></div>
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">agentic-16s · Phase 1 · draft v0.2 · 2026-11-15 · implemented in db/migrations (PostgreSQL 17), 5 studies loaded</div>
+  <h1>Database schema design</h1>
+  <p>PostgreSQL schema for the LLM-curated 16S database. Draft v0.1 was designed before any study had been curated. v0.2 is revised against five real IBD studies (573 16S runs) curated by agents in <code>studies/</code>: every hard case they hit is shown below with the table that stores it.</p>
+  <p>Every table and field is still a proposal. Click <b>Comment</b> on any field (or <b>Comment on table</b> / <b>Propose a field</b>) to mark it as looks right, change, remove, or question. Feedback is kept in this browser. When you are done, open <b>Feedback</b>, copy the Markdown, and paste it into the chat.</p>
+</header>
+
+<section id="changes">
+  <h2>What changed from v0.1, and why</h2>
+  <div class="card prose">
+    <ul>
+      <li><b>The database stores facts; analysis decisions live in views.</b> v0.1 put <code>disease_status</code> (case/control) and <code>include_in_analysis</code> on <code>core.sample</code>. Real studies showed these are judgement calls that depend on the question: are healthy siblings of patients controls (PMID 28174747)? Is "UC with C. difficile infection" a plain UC case (35756051)? Those now live in <code>analysis.cohort_definition</code>, so a data scientist can define a strict or a broad cohort over the same facts.</li>
+      <li><b>One long observation table for every subject-, sample- and run-level value.</b> <code>core.sample_label</code> becomes <code>core.observation</code>. It holds several values for the same field from different sources, so a conflict is stored instead of erased. In 23013615 the authors' sex codes are the inverse of the paper's Table 1 in every group: both readings are kept, neither is accepted, and a task records why.</li>
+      <li><b>A field dictionary and per-study value maps tame the heterogeneity.</b> The five studies used <code>host_sex</code>, <code>sex</code> and <code>gender</code>; <code>Normal</code>, <code>HC</code>, <code>Control</code> and <code>DZ</code> for controls. <code>core.field_dictionary</code> names each concept once and lists its synonyms; <code>core.value_map</code> records, per study, how each raw value was mapped and on what evidence. Fields not in the dictionary still go in, flagged as unregistered, and are promoted to columns once enough studies use them.</li>
+      <li><b>The paper's own groups and every number it states become rows.</b> Studies had 3 to 9 groups (HC/UCN/UCP, probands/siblings/parents, Inf_M/Uinf_M) and stated anywhere from 17 to 99 checkable numbers. <code>core.study_group</code> and <code>core.reported_count</code> replace the fixed <code>n_case_reported</code>-style columns, and every validation check points to the number it tested.</li>
+      <li><b>Raw archive text beyond BioSample attributes.</b> Labels sat in the BioSample sample name (35756051) and in the SRA experiment title (37661264). <code>raw.biosample_attribute</code> becomes <code>raw.archive_attribute</code>, covering BioSample, SRA experiment, run and ENA sample fields.</li>
+      <li><b>Every run is stored, including ones the paper did not use.</b> Archives held WGS runs next to 16S (29335008, 23013615), runs the authors excluded, pilot runs, and a pooled "unmatched barcodes" run. <code>core.run</code> gains <code>assay</code> and <code>used_in_paper</code>; <code>core.sample.sample_role</code> gains <code>technical_pool</code>.</li>
+      <li><b>Subjects can be unknown, inferred, or related.</b> 37661264 never says which biopsies come from the same patient; 23013615 counts samples as patients; 28174747 recruits whole families. <code>core.subject</code> gains <code>family_key</code> (relatives must stay on one side of a train/test split) and <code>core.sample</code> gains <code>subject_link</code>.</li>
+      <li><b>Where a document came from matters.</b> The per-sample labels for 23013615 exist only in a third-party copy on Zenodo of a file from a dead lab server. <code>core.document.origin</code> records that, so a cohort can include or exclude such sources.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="cases">
+  <h2>Tested against five real studies</h2>
+  <div class="card" style="overflow-x:auto">
+    <table class="f cases">
+      <thead><tr><th>Study</th><th>What made it hard</th><th>How v0.2 stores it</th></tr></thead>
+      <tbody>
+        <tr><td class="n"><a href="https://pubmed.ncbi.nlm.nih.gov/35756051/">35756051</a><br><span class="muted">UC ± C. difficile · 89 runs</span></td>
+          <td>The group is only the prefix of the sample name (<code>HC-512</code>, <code>UCN-025</code>, <code>UCP-131</code>). Ages like 57.1 and 57.2 are submitters' tweaks to get past BioSample's duplicate check. Two of 18 paper counts are off by one.</td>
+          <td><code>raw.archive_attribute</code> (biosample, sample_name) → <code>core.value_map</code> (prefix <code>UCP</code> → diagnosis UC and c_difficile_infection yes, evidence: Methods) → <code>core.observation</code>. <code>core.study_group</code> has HC/UCN/UCP with their sizes. Age: <code>value_raw</code> 57.1, <code>value_norm</code> 57. The two failed checks stay in <code>ops.validation_check</code>.</td></tr>
+        <tr><td class="n"><a href="https://pubmed.ncbi.nlm.nih.gov/28174747/">28174747</a><br><span class="muted">Pediatric IBD + relatives · 90 runs</span></td>
+          <td>All 54 "controls" are healthy siblings and parents of patients; 6 siblings and 9 parents are themselves patients. Siblings share one subject code.</td>
+          <td><code>core.subject.family_key</code> = family code; <code>relationship_to_proband</code> as an observation. <code>core.study_group</code> "healthy relatives", role <code>control</code>, control_type <code>family_member</code>. A cohort rule decides whether to keep them; the ML view groups folds by family.</td></tr>
+        <tr><td class="n"><a href="https://pubmed.ncbi.nlm.nih.gov/29335008/">29335008</a><br><span class="muted">Pediatric CD biopsies · 40 16S + 75 WGS runs</span></td>
+          <td>Disease in a custom BioSample attribute; sex and age only in a supplement spreadsheet; treatment only in an image table inside a PDF. Two 16S runs were excluded by the authors.</td>
+          <td><code>core.sample_name_map</code> joins alias S1–S40 to the spreadsheet, confirmed by an exact read-count check in <code>ops.validation_check</code>. <code>raw.supplement_table.parser</code> = vision transcription, with a warning. WGS runs: <code>core.run.assay</code> = WGS. S34, S38: <code>used_in_paper</code> = false.</td></tr>
+        <tr><td class="n"><a href="https://pubmed.ncbi.nlm.nih.gov/37661264/">37661264</a><br><span class="muted">CD stool + mucosa · 97 runs</span></td>
+          <td>The group sits only in the SRA experiment title (<code>CD_16S_mucosa</code>). Which of the 45 biopsies are inflamed, and which come from the same patient, is not published anywhere.</td>
+          <td><code>raw.archive_attribute</code> (experiment, title). No <code>inflamed</code> observation is invented: an <code>ops.human_task</code> (contact_authors) records the gap. The 45 biopsies get <code>subject_link</code> = unknown, which the ML view respects.</td></tr>
+        <tr><td class="n"><a href="https://pubmed.ncbi.nlm.nih.gov/23013615/">23013615</a><br><span class="muted">Morgan 2012 · 257 16S + 11 shotgun runs</span></td>
+          <td>Labels exist only in the authors' file, now a third-party copy on Zenodo. Its sex codes contradict the paper. "231 patients" are 221 people. 25 runs are outside the paper; one run is a pool of unmatched barcodes.</td>
+          <td><code>core.document.origin</code> = third_party_mirror. Sex: two observations in one <code>conflict_group</code>, neither accepted. <code>core.reported_count.unit</code> = samples for the 231. A/B/C suffixes → <code>subject_link</code> = inferred with the rule recorded. Pooled run: <code>sample_role</code> = technical_pool.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="principles">
+  <h2>Design principles</h2>
+  <div class="card prose">
+    <ul>
+      <li><b>Store everything, decide later.</b> Every API response, parsed supplementary table, and LLM response is kept verbatim in the <code>raw</code> layer. Curated values can be re-derived from it when rules change, without re-downloading or re-calling a model.</li>
+      <li><b>Facts, not decisions.</b> Curated tables record what a source says (diagnosis, relationship, infection status, whether the authors used the sample). Who counts as a case or a control, and which samples enter a model, is decided in <code>analysis.cohort_definition</code>, so the same facts serve a strict and a broad cohort.</li>
+      <li><b>Every curated value has a source, and conflicts are kept.</b> Study-level facts point to an <code>extraction</code> row with a verbatim evidence quote; subject-, sample- and run-level values are rows in <code>core.observation</code> that say where the value was found (archive attribute, spreadsheet cell, PDF table, external file, or a person). Two sources that disagree become two rows, not one guess.</li>
+      <li><b>Typed columns for common fields, a dictionary for the long tail.</b> A handful of fields every study has (diagnosis, sex, age, sample type, body site) are typed columns. Everything else is an observation whose field name is registered in <code>core.field_dictionary</code>, or flagged as unregistered until enough studies use it to promote it.</li>
+      <li><b>Technical covariates on every run.</b> Region, primers, platform, instrument, layout, read length, extraction kit, pipeline version, and reference database are reachable from each run, so the later batch-effect analysis needs no new columns.</li>
+      <li><b>Sequences, not just taxonomy.</b> ASV sequences and raw counts are stored, so ASVs can be re-classified against a new reference without re-running DADA2.</li>
+      <li><b>"Control" is never ambiguous.</b> A healthy control subject (<code>diagnosis = healthy</code>) and a negative-control or blank sample (<code>sample_role = negative_control</code>) are different columns.</li>
+      <li><b>One append-only activity log</b> for agents, scripts, and people.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="map">
+  <h2>Layers</h2>
+  <div class="map" id="layermap"></div>
+</section>
+
+<section id="flow">
+  <h2>How the main tables connect</h2>
+  <div class="card flow">
+    <svg viewBox="0 0 1100 300" role="img" aria-label="Core relationships: disease to study; paper to study via study_paper; study to archive_project, protocol, study_group, subject, sample, extraction; subject and sample to observation; sample to run; run to abundance; asv to abundance and taxonomy; pipeline_run to abundance and run_qc">
+      <text class="lbl" x="10" y="18">LITERATURE</text>
+      <text class="lbl" x="260" y="18">STUDY</text>
+      <text class="lbl" x="520" y="18">SAMPLES</text>
+      <text class="lbl" x="800" y="18">SEQUENCE DATA</text>
+      <g>
+        <rect class="t" x="10" y="40" width="150" height="28" rx="5"/><text x="20" y="58">paper</text>
+        <rect class="t" x="10" y="100" width="150" height="28" rx="5"/><text x="20" y="118">study_paper</text>
+        <rect class="t" x="10" y="160" width="150" height="28" rx="5"/><text x="20" y="178">document</text>
+        <rect class="t" x="10" y="220" width="150" height="28" rx="5"/><text x="20" y="238">disease</text>
+
+        <rect class="t" x="260" y="100" width="160" height="28" rx="5"/><text x="270" y="118">study</text>
+        <rect class="t" x="260" y="40" width="160" height="28" rx="5"/><text x="270" y="58">extraction</text>
+        <rect class="t" x="260" y="160" width="160" height="28" rx="5"/><text x="270" y="178">archive_project</text>
+        <rect class="t" x="260" y="220" width="160" height="28" rx="5"/><text x="270" y="238">protocol</text>
+
+        <rect class="t" x="520" y="40" width="160" height="28" rx="5"/><text x="530" y="58">subject</text>
+        <rect class="t" x="520" y="100" width="160" height="28" rx="5"/><text x="530" y="118">sample</text>
+        <rect class="t" x="520" y="160" width="160" height="28" rx="5"/><text x="530" y="178">observation</text>
+        <rect class="t" x="520" y="220" width="160" height="28" rx="5"/><text x="530" y="238">run</text>
+
+        <rect class="t" x="800" y="40" width="150" height="28" rx="5"/><text x="810" y="58">pipeline_run</text>
+        <rect class="t" x="800" y="100" width="150" height="28" rx="5"/><text x="810" y="118">run_qc</text>
+        <rect class="t" x="800" y="160" width="150" height="28" rx="5"/><text x="810" y="178">abundance</text>
+        <rect class="t" x="800" y="220" width="150" height="28" rx="5"/><text x="810" y="238">asv</text>
+        <rect class="t" x="980" y="220" width="110" height="28" rx="5"/><text x="990" y="238">taxonomy</text>
+      </g>
+      <g>
+        <path d="M85 68 V100"/><path d="M160 114 H260"/><path d="M160 234 C210 234 210 120 260 116"/>
+        <path d="M85 160 V128"/>
+        <path d="M340 68 V100"/><path d="M340 128 V160"/><path d="M420 120 C470 120 440 234 420 234" style="display:none"/>
+        <path d="M420 110 H470 V234 H420"/>
+        <path d="M420 114 H520"/><path d="M420 106 C470 106 470 54 520 54"/>
+        <path d="M600 68 V100"/><path d="M600 128 V160"/><path d="M680 114 C740 114 740 234 680 234"/>
+        <path d="M420 240 C470 260 470 260 520 240"/>
+        <path d="M680 234 H740 V174 H800"/><path d="M875 68 V100"/><path d="M950 54 C990 54 990 174 950 174"/>
+        <path d="M875 220 V188"/><path d="M950 234 H980"/><path d="M680 230 C740 210 760 120 800 114"/>
+      </g>
+      <text x="10" y="285" class="lbl">Lines show foreign keys. raw.* tables hang off paper, document, sample, run and llm_call; ops.* tables hang off study.</text>
+    </svg>
+  </div>
+</section>
+
+<section id="conventions">
+  <h2>Conventions used in every table</h2>
+  <div class="card prose">
+    <ul>
+      <li><b>Postgres schemas = layers.</b> <code>raw</code>, <code>core</code> (curated), <code>bio</code> (bioinformatics output), <code>ops</code> (log, tasks, checks), <code>analysis</code> (views only).</li>
+      <li><b>Keys.</b> Internal ids are <code>bigint generated always as identity</code>. Public accessions (PMID, BioProject, BioSample, run) are stored as <code>text</code> with a unique constraint; run and project accessions are used directly as primary keys because they are stable and globally unique.</li>
+      <li><b>Controlled values</b> are <code>text</code> columns with a <code>CHECK</code> constraint (not Postgres <code>ENUM</code> types), so adding a value is a one-line migration. Allowed values are listed in each field's description.</li>
+      <li><b>Time.</b> All timestamps are <code>timestamptz</code> in UTC. Every <code>core</code> and <code>bio</code> table also has <code>created_at</code> and <code>updated_at</code> (not repeated below).</li>
+      <li><b>Not null.</b> <span class="key">NN</span> marks required fields; everything else may be null, meaning "not known yet". Unknown is never stored as an invented default.</li>
+      <li><b>Personal data.</b> Only what the paper or archive already published (sex, age, BMI, country). No names or direct identifiers.</li>
+      <li><b>Files</b> (PDFs, supplements, FASTQ) live on disk under <code>DATA_DIR</code> outside git; the database stores their path and SHA-256. FASTQ is temporary: it is deleted once the study's ASV and count tables are loaded (see <code>run.download_state</code>), because the full IBD set would need 1.2–2 TB.</li>
+    </ul>
+    <p class="muted">Key legend: <span class="key pk">PK</span> primary key · <span class="key fk">FK</span> foreign key · <span class="key">UQ</span> unique · <span class="key">NN</span> not null · <span class="key">IDX</span> indexed.</p>
+  </div>
+</section>
+
+<section id="tables">
+  <h2>Tables</h2>
+  <div id="tablelist"></div>
+  <p id="nomatch" class="muted hidden" style="margin-top:14px">No table or field matches the filter.</p>
+</section>
+
+<section id="questions">
+  <h2>Open design questions</h2>
+  <div class="card" id="qlist"></div>
+</section>
+</div>
+
+<dialog id="fbdlg">
+  <header>
+    <h2>Your feedback (Markdown)</h2>
+    <button class="btn primary" id="copyfb">Copy</button>
+    <button class="btn" id="dlfb">Download .md</button>
+    <button class="btn" id="clearfb">Clear all</button>
+    <button class="btn" id="closefb" aria-label="Close">Close</button>
+  </header>
+  <pre id="fbtext"></pre>
+  <div class="foot" id="fbfoot">Paste this into the chat. Feedback is saved only in this browser.</div>
+</dialog>
+
+<script>
+const LAYERS = {
+  raw:      { title: "raw",      name: "Raw layer",           blurb: "Verbatim copies of everything fetched or generated. Never edited; only appended." },
+  core:     { title: "core",     name: "Curated layer",       blurb: "Facts with provenance: papers, studies and their groups, subjects, samples, runs, and every observed value (conflicts included) with its source." },
+  bio:      { title: "bio",      name: "Bioinformatics",      blurb: "Pipeline runs, read tracking, ASV sequences, counts, taxonomy." },
+  ops:      { title: "ops",      name: "Operations",          blurb: "Activity log, human task queue, validation checks." },
+  analysis: { title: "analysis", name: "Analysis layer",      blurb: "Cohort definitions (the only place case/control is decided) and the views built from them for ML and the dashboard." }
+};
+
+/* Each field: [name, type, keys, meaning, example] */
+const SCHEMA = [
+/* ───────────── core ───────────── */
+{ s: "core", t: "disease",
+  d: "Controlled list of diseases and subtypes the project studies. IBD is the parent of Crohn's disease and ulcerative colitis.",
+  why: "Lets a query for \"IBD\" include its subtypes, and keeps the synonyms used for literature search and label mapping in one place.",
+  f: [
+  ["disease_id", "smallint", "PK", "Internal id.", "1"],
+  ["code", "text", "UQ NN", "Short key used in file names and scripts. Matches the disease keys in phase0/scripts/common.py.", "ibd, cd, uc"],
+  ["name", "text", "NN", "Display name.", "Crohn's disease"],
+  ["parent_id", "smallint", "FK → core.disease", "Parent disease, so subtypes roll up. Null for top-level diseases.", "cd → ibd"],
+  ["ontology_id", "text", "", "Identifier in a public disease ontology (MONDO preferred, EFO otherwise), for joining with external resources like GMrepo.", "MONDO:…"],
+  ["synonyms", "text[]", "", "Names and abbreviations used in papers and archive attributes. Used to build search queries and to map raw labels such as \"CD\" or \"Crohn\" to this disease.", "{Crohn disease, CD, regional enteritis}"],
+  ["search_query", "text", "", "The exact literature query string currently used for this disease. Older versions are kept in git and in ops.activity_log.", "(\"Crohn disease\" OR …) AND \"16S\""]
+]},
+{ s: "core", t: "paper",
+  d: "One row per publication, whether it is a primary study, a companion paper, or a paper that only reuses someone else's data.",
+  why: "Papers and studies are not one-to-one: one dataset (for example HMP2) is reused by dozens of papers, and one paper can describe several datasets. Keeping papers separate avoids duplicate studies.",
+  f: [
+  ["paper_id", "bigint", "PK", "Internal id.", ""],
+  ["pmid", "text", "UQ", "PubMed id. Null for preprints or papers not in PubMed.", "33537340"],
+  ["pmcid", "text", "UQ", "PubMed Central id. Present when the full text is in PMC; required for automated full-text fetch.", "PMC7939217"],
+  ["doi", "text", "UQ", "DOI, stored lowercase without the https://doi.org/ prefix.", "10.1038/s41586-019-1237-9"],
+  ["title", "text", "NN", "Article title as published.", ""],
+  ["journal", "text", "", "Journal name.", "Gut"],
+  ["pub_year", "smallint", "IDX", "Publication year. Used for trends such as the rising share of papers that name an accession.", "2021"],
+  ["pub_date", "date", "", "Full publication date when known.", "2021-03-04"],
+  ["authors", "jsonb", "", "Author list as an array of objects with name, affiliation, and ORCID when available. Used to recognise companion papers from the same group.", "[{\"name\":\"…\",\"orcid\":null}]"],
+  ["abstract", "text", "", "Abstract text, used by the screening step.", ""],
+  ["is_open_access", "boolean", "", "True if the full text is in the PMC Open Access subset. Only these papers are fetched automatically.", "true"],
+  ["oa_license", "text", "", "License of the open-access copy. Decides whether the text may be redistributed (it is never committed to git either way).", "cc-by"],
+  ["fulltext_status", "text", "NN", "Where getting the full text stands. One of: not_tried, fetched_oa, not_oa, blocked, human_supplied, unavailable. Anything other than fetched_oa or human_supplied usually has an open ops.human_task.", "not_oa"],
+  ["found_by", "jsonb", "", "Which searches returned this paper: disease, query version, source (Europe PMC, PubMed), date. A paper found by several disease searches has several entries.", "[{\"disease\":\"ibd\",\"query\":\"v1\",\"source\":\"epmc\"}]"],
+  ["raw_record_id", "bigint", "FK → raw.api_record", "The Europe PMC / PubMed record this row was parsed from.", ""]
+]},
+{ s: "core", t: "study",
+  d: "The unit of curation: one dataset with one cohort, normally the primary paper plus its archive project(s). Every stage of the pipeline (screen, extract, locate labels, validate, process) is tracked per study.",
+  why: "curation_state is a cached summary of the activity log so the dashboard can list studies by stage without replaying the log. The numbers a paper states are no longer fixed columns here: the five test studies stated 17 to 99 checkable numbers each, broken down by group, sex and sample type, so they live in core.reported_count, and the paper's own groups in core.study_group.",
+  f: [
+  ["study_id", "bigint", "PK", "Internal id.", ""],
+  ["study_key", "text", "UQ NN", "Human-readable stable key: disease, year, first author, main accession. Used in file paths and the dashboard.", "ibd-2021-lloyd-prjna398089"],
+  ["primary_paper_id", "bigint", "FK → core.paper", "The paper that first describes the cohort. Null for archive-only datasets with no paper.", ""],
+  ["disease_id", "smallint", "FK → core.disease NN", "The disease this study is about. Subtypes of individual subjects go in core.subject.diagnosis.", "ibd"],
+  ["title", "text", "", "Short title, usually the paper title.", ""],
+  ["design", "text", "", "Study design. One of: case_control, cross_sectional, cohort_longitudinal, intervention, other. Longitudinal studies have several samples per subject, which matters for the subject-grouped cross-validation.", "case_control"],
+  ["screening_decision", "text", "NN", "Result of the screening step. One of: undecided, include, exclude.", "include"],
+  ["screening_reason", "text", "", "Why the study was excluded or flagged. Required when excluded.", "animal model; shotgun metagenomics not 16S"],
+  ["curation_state", "text", "NN IDX", "Furthest stage reached. One of: discovered, screened, metadata_extracted, labels_located, labels_validated, processed, loaded. Updated by the same code that writes the activity log.", "labels_located"],
+  ["blocked", "boolean", "NN", "True while the study waits on something (usually an open human task). Default false.", "true"],
+  ["blocked_reason", "text", "", "One-line reason, copied from the open task.", "supplement only on publisher site"],
+  ["case_definition", "text", "", "How the paper defines a case, in its own words (also stored with a quote in core.extraction). Per-group definitions are in core.study_group.", "CD diagnosed by endoscopy and histology"],
+  ["control_definition", "text", "", "How controls were chosen, in the paper's words. For IBD this matters: healthy volunteers, symptomatic non-IBD patients, and patients' relatives are different populations.", "healthy first-degree relatives of probands"],
+  ["family_based", "boolean", "", "True if participants include relatives of each other (28174747). Tells the ML view to group cross-validation folds by family, not only by subject.", "true"],
+  ["countries", "text[]", "", "Countries where participants were recruited, ISO 3166-1 alpha-2.", "{US}"],
+  ["recruitment_setting", "text", "", "Where participants came from: hospital clinic, population cohort, biobank, etc.", "tertiary IBD centre"],
+  ["collection_period", "text", "", "Years of sample collection as stated.", "2014–2016"],
+  ["notes", "text", "", "Free-text curator notes.", ""]
+]},
+{ s: "core", t: "study_paper",
+  d: "Links studies and papers, with the role each paper plays.",
+  why: "Reuse papers often name the accession in their text (the Phase 0 text mining found many), so they will be discovered. This table records them without creating a second study for the same data.",
+  f: [
+  ["study_id", "bigint", "PK FK → core.study", "The study.", ""],
+  ["paper_id", "bigint", "PK FK → core.paper", "The paper.", ""],
+  ["role", "text", "NN", "One of: primary, companion (same cohort, other analysis by the same group), reuse (reanalysis by others), erratum.", "reuse"],
+  ["evidence", "text", "", "Why the link was made, for example the sentence naming the accession.", "\"Data were obtained from PRJNA398089\""]
+]},
+{ s: "core", t: "study_group",
+  d: "The groups a study defines, in its own words: HC / UCN / UCP; probands / healthy siblings / healthy parents; CD stool / CD mucosa / control stool; responders / non-responders.",
+  why: "Every test study had its own group vocabulary, and the group a sample belongs to is the most important fact about it. Storing the paper's groups as rows (with their size and definition) lets the validator check group sizes, and lets cohort rules say \"controls = groups with role control and control_type healthy_volunteer\" without re-reading any paper.",
+  f: [
+  ["group_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN", "The study.", ""],
+  ["label", "text", "NN", "The group's name exactly as the paper uses it. UQ together with study_id.", "UCP"],
+  ["definition", "text", "", "The paper's definition of the group, in its words.", "UC patients with C. difficile infection at sampling"],
+  ["evidence_quote", "text", "", "Verbatim quote supporting the definition, at most 25 words.", ""],
+  ["diagnosis_code", "text", "FK → core.disease", "Diagnosis of the group's members when the group has one: cd, uc, ibdu, ibd, or null for controls and mixed groups.", "uc"],
+  ["role", "text", "", "What the group is in the paper's design: case, control, comparator, other. A fact about the paper, not a modelling decision: the paper used UCN as the comparator for UCP even though both are UC.", "case"],
+  ["control_type", "text", "", "For control groups: healthy_volunteer, family_member, symptomatic_non_ibd, household_member, other.", "family_member"],
+  ["parent_group_id", "bigint", "FK → core.study_group", "For nested groups (\"healthy siblings\" inside \"healthy relatives\").", ""],
+  ["extra", "jsonb", "", "Group-level attributes that define it beyond diagnosis.", "{\"c_difficile_infection\":\"yes\"}"]
+]},
+{ s: "core", t: "reported_count",
+  d: "Every number the paper states that the curated data can be checked against: subjects, samples, cases per group, sex split, people over an age cut-off, read depth.",
+  why: "The validator compares the curated records with these rows, one check per row. Fixed columns (v0.1's n_case_reported) held 4 numbers; the test studies stated up to 99, and in 23013615 the \"231 patients\" turned out to be samples, so the unit must be explicit per number.",
+  f: [
+  ["count_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN IDX", "The study.", ""],
+  ["name", "text", "NN", "Short name of what is counted.", "female_in_UCP"],
+  ["unit", "text", "NN", "What is counted: subjects, samples, runs, reads, families.", "subjects"],
+  ["group_id", "bigint", "FK → core.study_group", "The group the number is about, if any.", ""],
+  ["filter", "jsonb", "", "Further conditions as field/value pairs, so code can recompute the number from observations.", "{\"sex\":\"female\"}"],
+  ["value", "numeric", "", "The number as stated. Means and percentages are allowed (with stat).", "12"],
+  ["stat", "text", "NN", "count, mean, median, sd, percent, min, max.", "count"],
+  ["evidence_quote", "text", "", "Verbatim quote or table cell, at most 25 words.", ""],
+  ["evidence_document_id", "bigint", "FK → core.document", "Where the number was found.", ""],
+  ["evidence_location", "text", "", "Section, table or figure.", "Table 1"],
+  ["extraction_id", "bigint", "FK → core.extraction", "The extraction row that produced it, if extracted by an LLM.", ""]
+]},
+{ s: "core", t: "archive_project",
+  d: "A project in a sequence archive (NCBI BioProject, ENA study, DDBJ). A study normally has one, sometimes several (for example one per cohort or per sequencing batch).",
+  why: "Projects are discovered from SRA before they are tied to a paper, so study_id may be null at first. Phase 0 counted 343 IBD projects, most still unassigned.",
+  f: [
+  ["project_accession", "text", "PK", "BioProject or ENA project accession.", "PRJNA685746"],
+  ["study_id", "bigint", "FK → core.study IDX", "The study this project belongs to. Null until screening assigns it.", ""],
+  ["secondary_accession", "text", "", "SRA/ENA study accession (SRP, ERP, DRP).", "SRP297532"],
+  ["archive", "text", "NN", "Which archive holds the primary record. One of: ncbi, ena, ddbj.", "ncbi"],
+  ["title", "text", "", "Project title as submitted.", ""],
+  ["description", "text", "", "Project description as submitted. Sometimes the only place that states the region or primers.", ""],
+  ["center_name", "text", "", "Submitting centre. Useful as a batch covariate (same lab, same protocol).", ""],
+  ["n_runs_archive", "integer", "", "Number of runs in the archive at last fetch.", "3483"],
+  ["n_biosamples_archive", "integer", "", "Number of BioSamples at last fetch.", "1500"],
+  ["first_release", "date", "", "Date the first run was made public.", "2021-05-05"],
+  ["archive_pubmed_ids", "text[]", "", "PubMed ids that the archive itself links to the project. Often empty; a cheap first clue to the primary paper.", "{}"],
+  ["raw_record_id", "bigint", "FK → raw.api_record", "The archive record this row was parsed from.", ""]
+]},
+{ s: "core", t: "protocol",
+  d: "The wet-lab and sequencing protocol of a study. Most studies have one; a study with two batches or two primer sets has two. Each run points to the protocol that produced it.",
+  why: "These are the technical covariates for batch-effect analysis and the inputs that make the pipeline correct (primers for Cutadapt, read layout for DADA2). Values come from accepted core.extraction rows; where the reads can confirm them (primers, read length), run-level QC records what was actually observed.",
+  f: [
+  ["protocol_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN", "The study.", ""],
+  ["label", "text", "NN", "Name of the protocol within the study. UQ together with study_id.", "main; batch2"],
+  ["target_gene", "text", "NN", "Amplified marker gene. Default 16S rRNA; kept explicit so ITS or 18S studies can be stored or rejected clearly.", "16S rRNA"],
+  ["variable_region", "text", "IDX", "Amplified region, normalized to the form V4, V3-V4, V1-V2, V4-V5, V1-V3, full_length. The single most important covariate for cross-study merging.", "V3-V4"],
+  ["forward_primer_name", "text", "", "Primer name as given in the paper.", "341F"],
+  ["forward_primer_seq", "text", "", "Forward primer sequence 5'→3' with IUPAC codes. Passed to Cutadapt.", "CCTACGGGNGGCWGCAG"],
+  ["reverse_primer_name", "text", "", "Reverse primer name.", "805R"],
+  ["reverse_primer_seq", "text", "", "Reverse primer sequence 5'→3'.", "GACTACHVGGGTATCTAATCC"],
+  ["primers_in_reads", "boolean", "", "Whether the deposited reads still contain the primers. Decides whether Cutadapt must find and trim them or whether the reads are already trimmed. Confirmed from the reads in bio.run_qc.", "true"],
+  ["platform", "text", "", "Sequencing platform in SRA vocabulary: ILLUMINA, ION_TORRENT, PACBIO_SMRT, OXFORD_NANOPORE, LS454.", "ILLUMINA"],
+  ["instrument_model", "text", "", "Instrument as stated in the paper (the archive value per run is in core.run).", "Illumina MiSeq"],
+  ["layout", "text", "", "Nominal layout: PAIRED or SINGLE.", "PAIRED"],
+  ["read_length_nominal", "smallint", "", "Read length per mate as described in the paper (2×300 → 300).", "300"],
+  ["sequencing_kit", "text", "", "Sequencing chemistry or kit.", "MiSeq Reagent Kit v3"],
+  ["dna_extraction_kit", "text", "", "DNA extraction kit. A known strong batch effect, especially for Gram-positive taxa.", "QIAamp PowerFecal"],
+  ["bead_beating", "boolean", "", "Whether mechanical lysis was used.", "true"],
+  ["pcr_polymerase", "text", "", "Polymerase used for amplification.", "Phusion"],
+  ["pcr_cycles", "smallint", "", "Number of PCR cycles.", "25"],
+  ["sample_storage", "text", "", "How samples were stored before extraction: frozen −80 °C, RNAlater, OMNIgene, ethanol, etc.", "frozen -80C"],
+  ["sequencing_center", "text", "", "Lab or core facility that sequenced the samples.", ""],
+  ["negative_controls_sequenced", "boolean", "", "Whether blanks or extraction controls were sequenced and deposited.", "true"],
+  ["mock_community_sequenced", "boolean", "", "Whether a mock community was sequenced.", "false"],
+  ["extra", "jsonb", "", "Other protocol details found but not yet promoted to columns (for example sample homogenisation, barcoding scheme).", "{}"]
+]},
+{ s: "core", t: "subject",
+  d: "A participant (human host) in a study. Several samples can come from one subject (longitudinal sampling, several body sites).",
+  why: "Cross-validation must be grouped by subject so repeated samples of one person never sit in both train and test, and by family when relatives are enrolled. Diagnosis is a property of the person; disease activity is a property of the sample and lives there. The typed columns below hold the accepted value; every candidate value, with its source, is in core.observation.",
+  f: [
+  ["subject_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN", "The study.", ""],
+  ["subject_key", "text", "NN", "The participant id as used in the study (archive host_subject_id or the paper's id). UQ together with study_id. When a study gives no subject ids, one subject per sample is created and subject_key_inferred is true.", "1052"],
+  ["subject_key_source", "text", "NN", "How subject_key was obtained: archive (host_subject_id or similar), paper, inferred_rule (e.g. 23013615: samples 7646A/B/C are one person), one_per_sample (no subject information; assumed).", "inferred_rule"],
+  ["subject_key_rule", "text", "", "The rule used when subject_key_source is inferred_rule.", "strip trailing A/B/C from sample name"],
+  ["family_key", "text", "IDX", "Family id when the study enrols relatives. Cross-validation folds are grouped by family_key when it is set.", "01"],
+  ["group_id", "bigint", "FK → core.study_group", "The paper's group this person belongs to.", ""],
+  ["diagnosis", "text", "", "Diagnosis code from core.disease, or a control code: healthy, non_ibd_control, other. A fact about the person; case/control for a model is decided in analysis.cohort_definition.", "cd"],
+  ["control_type", "text", "", "For controls only: healthy_volunteer, family_member, symptomatic_non_ibd, household_member, other. Lets analyses include or exclude each kind.", "family_member"],
+  ["sex", "text", "", "One of: female, male, other, unknown, as reported.", "female"],
+  ["age_years", "numeric(5,1)", "", "Age at enrolment (baseline), in years.", "34"],
+  ["age_range", "text", "", "Age as a range when only a range is published.", "18-30"],
+  ["bmi", "numeric(4,1)", "", "Body mass index at enrolment.", "23.4"],
+  ["country", "text", "", "Country of residence, ISO 3166-1 alpha-2, when known per subject.", "US"],
+  ["ethnicity", "text", "", "Ethnicity or ancestry exactly as reported. Not normalized; kept because under-represented populations are part of the gap analysis.", ""],
+  ["diagnosis_detail", "jsonb", "", "Disease-specific detail: Montreal classification (location, behaviour), age at diagnosis, disease duration, surgery history.", "{\"montreal\":\"A2L3B1\",\"years_since_dx\":6}"],
+  ["extra", "jsonb", "", "Accepted values of per-subject fields not promoted to columns, rebuilt from core.observation (relationship_to_proband, smoking, diet…). A convenience copy for queries; the observations are the record.", "{\"relationship_to_proband\":\"sibling\"}"]
+]},
+{ s: "core", t: "sample",
+  d: "One biological specimen (or technical control) as registered in the archive, normally one BioSample. The typed columns hold the currently accepted values; every candidate value and where it came from is in core.observation.",
+  why: "This row records facts about the specimen. v0.1 also stored the ML label (disease_status) and include_in_analysis here; both are decisions that depend on the analysis, so they moved to analysis.cohort_definition. sample_role keeps negative controls, mock communities and pooled runs apart; used_in_paper records whether the authors analysed the sample.",
+  f: [
+  ["sample_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN IDX", "The study.", ""],
+  ["subject_id", "bigint", "FK → core.subject", "The participant. Null for technical controls, and when subject_link is unknown.", ""],
+  ["subject_link", "text", "NN", "How sure the link to a person is: known (from a subject id), inferred (by a recorded rule), one_per_sample (assumed, no information), unknown (the person exists but which one is not published, e.g. the 45 biopsies of 37661264), not_applicable (technical controls).", "unknown"],
+  ["group_id", "bigint", "FK → core.study_group", "The paper's group for this sample (a stool and a biopsy from one person can be in different groups, e.g. CD_feces vs CD_mucosa).", ""],
+  ["used_in_paper", "boolean", "", "Whether the authors' analysis used this sample. False for samples they excluded (29335008: S34, S38) or never mentioned (23013615: 25 pilot and extra runs). Null when unknown.", "false"],
+  ["biosample_accession", "text", "UQ", "BioSample accession (SAMN, SAMEA, SAMD). Null only for samples known from the paper but never deposited.", "SAMN17123456"],
+  ["archive_sample_name", "text", "", "The submitter's sample name in the archive (SRA SampleName / BioSample title). Usually the key that links to the paper's tables.", "1052C2"],
+  ["paper_sample_name", "text", "", "The sample name used in the paper or its supplement, after linking (see core.sample_name_map).", "P012_plaque"],
+  ["sample_role", "text", "NN", "One of: biological, negative_control (extraction or PCR blank), mock_community, positive_control, technical_pool (e.g. reads with unmatched barcodes, 23013615), other. Default biological.", "biological"],
+  ["sample_type", "text", "", "Specimen type, normalized: stool, colon_biopsy, ileal_biopsy, rectal_biopsy, rectal_swab, mucosal_brush, saliva, plaque, other.", "stool"],
+  ["body_site_uberon", "text", "", "UBERON term for the body site, for joining with other resources.", "UBERON:0001988"],
+  ["inflamed", "boolean", "", "For biopsies: whether the sampled tissue was inflamed, when stated per sample. Null when only group totals are published.", ""],
+  ["age_at_sampling", "numeric(5,1)", "", "Age when this sample was taken. Per sample because one person sampled at several visits has several ages (23013615); core.subject.age_years is the age at the first sample.", "34"],
+  ["disease_activity", "text", "", "Activity at the time of sampling: active, remission, unknown.", "active"],
+  ["activity_scores", "jsonb", "", "Clinical scores at sampling as published, for example HBI, SCCAI, Mayo, fecal calprotectin.", "{\"HBI\":7,\"calprotectin_ugg\":350}"],
+  ["timepoint", "text", "", "Timepoint label for longitudinal studies, as in the study.", "week 8"],
+  ["days_from_baseline", "integer", "", "Days from the subject's first sample. 0 for baseline.", "56"],
+  ["collection_date", "date", "", "Collection date when published. Partial dates are stored as the first day and flagged in extra.", "2015-06-01"],
+  ["antibiotics_recent", "boolean", "", "Antibiotic use within the study's exclusion window (stated in extra.antibiotics_window).", "false"],
+  ["medications", "jsonb", "", "Medications at sampling: 5-ASA, steroids, immunomodulators, biologics, PPIs.", "{\"biologic\":\"infliximab\"}"],
+  ["label_source", "text", "", "Where the accepted group came from, copied from its observation for quick filtering: archive_attribute, archive_name_pattern, archive_title, supplement, paper_table, external_file, human.", "archive_title"],
+  ["n_open_conflicts", "smallint", "NN", "Number of fields of this sample (or its subject) with conflicting observations and none accepted. Default 0. Cohort rules can require 0 for the fields they use.", "1"],
+  ["extra", "jsonb", "", "Accepted values of per-sample fields not promoted to columns, rebuilt from core.observation. A convenience copy; the observations are the record.", "{\"c_difficile_infection\":\"yes\"}"],
+  ["raw_record_id", "bigint", "FK → raw.api_record", "The BioSample record this row was parsed from.", ""]
+]},
+{ s: "core", t: "observation",
+  d: "Every value found for a subject-, sample- or run-level field, one row per value and source: what was found, where, how it was normalized, and whether it is accepted. The heart of the curated layer.",
+  why: "The test studies proved three things a single column cannot hold. Values conflict (23013615: the authors' sex codes contradict the paper, so both rows are kept and neither is accepted). Fields differ per study (relationship_to_proband, c_difficile_infection, treatment_response), so the field name is data, checked against core.field_dictionary but not limited by it. And every value must trace back to an attribute, a cell, or a quote. Typed columns in core.subject and core.sample are copies of accepted rows, rebuilt by code.",
+  f: [
+  ["obs_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN IDX", "The study.", ""],
+  ["entity_type", "text", "NN", "What the value describes: subject, sample, run.", "subject"],
+  ["subject_id", "bigint", "FK → core.subject IDX", "Set when entity_type is subject. Exactly one of the three ids is set (CHECK).", ""],
+  ["sample_id", "bigint", "FK → core.sample IDX", "Set when entity_type is sample.", ""],
+  ["run_accession", "text", "FK → core.run", "Set when entity_type is run (e.g. used_in_paper decided per run).", ""],
+  ["field", "text", "NN IDX", "Canonical field name. Normally a field_dictionary key; an unknown name is allowed and marked by registered = false.", "sex"],
+  ["registered", "boolean", "NN", "True if field is in core.field_dictionary. Unregistered fields are the long tail; the dictionary's promotion report counts them across studies.", "true"],
+  ["value_raw", "text", "", "The value exactly as found, before any mapping.", "M"],
+  ["value_norm", "text", "", "The normalized value as text, per the dictionary's allowed values or unit.", "male"],
+  ["value_num", "numeric", "", "Numeric form for numeric fields (age in years, BMI), for range queries.", "57"],
+  ["unit", "text", "", "Unit of value_num.", "years"],
+  ["source_type", "text", "NN", "One of: archive_attribute, archive_name_pattern, archive_title, supplement, paper_table, paper_text, paper_figure, external_file, author_contact, human, derived.", "external_file"],
+  ["source_document_id", "bigint", "FK → core.document", "The file the value came from, for supplement, paper and external sources.", ""],
+  ["source_locator", "jsonb", "", "Exactly where: attribute name, sheet/row/column, table number, figure panel.", "{\"file\":\"osccar_prism_metadata.txt\",\"column\":\"gender\",\"row\":\"7646A\"}"],
+  ["value_map_id", "bigint", "FK → core.value_map", "The study-level mapping that turned value_raw into value_norm, when one applied.", ""],
+  ["status", "text", "NN IDX", "One of: candidate, accepted, rejected, conflict, superseded. At most one accepted row per entity and field (partial unique index). Rows that disagree with no basis to choose are all set to conflict.", "conflict"],
+  ["conflict_group", "bigint", "", "Shared id of the rows that disagree with each other, so they are reviewed together.", "17"],
+  ["confidence", "text", "", "high, medium, low: the curator's confidence in this reading of the source.", "medium"],
+  ["note", "text", "", "Anything a reviewer needs: why it conflicts, what was assumed.", "metadata M equals the paper's female count in every group"],
+  ["llm_call_id", "bigint", "FK → raw.llm_call", "The LLM call that produced this value, if any.", ""],
+  ["log_id", "bigint", "FK → ops.activity_log", "The log entry of the step that wrote it (agent, script, or person).", ""]
+]},
+{ s: "core", t: "field_dictionary",
+  d: "The list of canonical fields observations can use, with their type, allowed values or unit, and the names they appear under in archives and supplements.",
+  why: "The five test studies used host_sex, sex and gender for one concept, and gastrointest_disord, disease state and a sample-name prefix for another. The dictionary is how that heterogeneity is tamed without forcing every study into fixed columns. promoted_to records which fields have typed columns; the rest stay as observations and in extra JSONB.",
+  f: [
+  ["field", "text", "PK", "Canonical name.", "relationship_to_proband"],
+  ["level", "text", "NN", "subject, sample, or run.", "subject"],
+  ["value_type", "text", "NN", "text, enum, number, boolean, date.", "enum"],
+  ["allowed_values", "text[]", "", "For enum fields.", "{proband,sibling,parent,child,spouse,other}"],
+  ["unit", "text", "", "Canonical unit for numbers.", "years"],
+  ["synonyms", "text[]", "", "Names this field appears under in sources; used by mapping scripts and agents.", "{host_family_relationship,relation,family_role}"],
+  ["description", "text", "NN", "What the field means.", ""],
+  ["promoted_to", "text", "", "Typed column that holds the accepted value (core.subject.sex), or null if the field lives only in observations and extra.", "core.subject.sex"],
+  ["added_at", "date", "NN", "When the field was registered.", ""]
+]},
+{ s: "core", t: "value_map",
+  d: "Per-study rules that turn raw values into normalized ones: sample-name prefix UCP means UC with C. difficile infection; gastrointest_disord Normal means healthy; sex code 1 means female.",
+  why: "Mappings are study-specific and are where silent mislabelling happens, so each one is a row with its evidence and status, reviewed once and applied to every sample. If a mapping turns out wrong, fixing the row and re-applying it updates every observation that used it.",
+  f: [
+  ["value_map_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN", "The study.", ""],
+  ["source_field", "text", "NN", "Where the raw value comes from: an attribute name, a column, or a pattern.", "biosample:sample_name prefix"],
+  ["raw_value", "text", "NN", "The raw value or pattern.", "UCP-*"],
+  ["field", "text", "NN", "Target canonical field.", "diagnosis"],
+  ["value_norm", "text", "", "Normalized value.", "uc"],
+  ["also_sets", "jsonb", "", "Other fields the same raw value implies.", "{\"c_difficile_infection\":\"yes\"}"],
+  ["evidence", "text", "", "Why the mapping holds: a quote, or a count match (e.g. 8 blank-diagnosis rows = 8 indeterminate colitis in Table 1).", ""],
+  ["basis", "text", "NN", "stated (the paper or archive says so), count_match (inferred because counts line up), assumed.", "count_match"],
+  ["status", "text", "NN", "proposed, accepted, rejected.", "accepted"],
+  ["log_id", "bigint", "FK → ops.activity_log", "Who proposed or accepted it.", ""]
+]},
+{ s: "core", t: "sample_name_map",
+  d: "The validated link between a sample name used in the paper (\"P012_plaque\") and an archive accession (BioSample or run).",
+  why: "This join is the easiest place to silently mislabel samples, so it is its own step with its own evidence and status, separate from the label itself.",
+  f: [
+  ["map_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN", "The study.", ""],
+  ["paper_sample_name", "text", "NN", "The name as written in the paper's table.", "P012_plaque"],
+  ["source_document_id", "bigint", "FK → core.document", "The table it came from.", ""],
+  ["biosample_accession", "text", "", "Matched BioSample (one of biosample or run is required).", "SAMN05432101"],
+  ["run_accession", "text", "", "Matched run, when the paper names runs directly.", "SRR1234567"],
+  ["match_method", "text", "NN", "One of: exact, normalized (case, punctuation, zero-padding), pattern (a learned rewrite rule), llm, human.", "normalized"],
+  ["matched_on", "text", "", "Which archive field matched: SampleName, BioSample title, host_subject_id, a specific attribute.", "SampleName"],
+  ["rule", "text", "", "The rewrite rule for pattern matches, applied to the whole study.", "strip suffix _plaque; zero-pad to 3 digits"],
+  ["confidence", "numeric(3,2)", "", "0–1. Exact and normalized matches are 1.0; LLM matches carry the model's estimate and always need validation.", "1.00"],
+  ["status", "text", "NN", "One of: candidate, accepted, rejected.", "accepted"],
+  ["log_id", "bigint", "FK → ops.activity_log", "The log entry that created or validated the link.", ""]
+]},
+{ s: "core", t: "run",
+  d: "One sequencing run in the archive (SRR/ERR/DRR): the unit that is downloaded and processed. A sample usually has one run, sometimes several (re-sequencing, several lanes).",
+  why: "Archive technical metadata is stored per run because it can differ from the paper's protocol. Note: SRA avgLength is the total of both mates for paired runs (2×301 → 602), so observed_read_length is measured from the FASTQ.",
+  f: [
+  ["run_accession", "text", "PK", "Run accession.", "SRR13294511"],
+  ["sample_id", "bigint", "FK → core.sample NN IDX", "The sample sequenced.", ""],
+  ["experiment_accession", "text", "", "SRA experiment (SRX/ERX). Groups runs of one library.", "SRX9712345"],
+  ["project_accession", "text", "FK → core.archive_project NN", "The archive project.", "PRJNA685746"],
+  ["protocol_id", "bigint", "FK → core.protocol", "The protocol that produced the run. Decides which pipeline settings apply.", ""],
+  ["platform", "text", "", "Platform as recorded in the archive.", "ILLUMINA"],
+  ["instrument_model", "text", "", "Instrument as recorded in the archive.", "Illumina MiSeq"],
+  ["library_strategy", "text", "", "Archive library strategy as recorded.", "AMPLICON"],
+  ["assay", "text", "NN IDX", "What the run actually is, after checking: 16s_amplicon, shotgun, other_amplicon, unknown. Usually follows library_strategy, but archives mislabel (23013615 has a WXS run that is shotgun). Shotgun runs are stored, not processed by the 16S pipeline.", "16s_amplicon"],
+  ["used_in_paper", "boolean", "", "Whether the authors' analysis used this run, when it can differ from the sample (re-sequenced lanes, excluded low-depth runs).", "true"],
+  ["library_source", "text", "", "Archive library source.", "METAGENOMIC"],
+  ["library_selection", "text", "", "Archive library selection.", "PCR"],
+  ["library_layout", "text", "", "PAIRED or SINGLE as recorded in the archive.", "PAIRED"],
+  ["spots", "bigint", "", "Number of reads (read pairs for paired runs) in the archive.", "57125"],
+  ["bases", "bigint", "", "Total bases in the archive.", "34489500"],
+  ["avg_length_archive", "integer", "", "SRA avgLength: sum of both mates for paired runs.", "602"],
+  ["observed_read_length", "smallint", "", "Read length per mate measured from the downloaded FASTQ.", "301"],
+  ["release_date", "timestamptz", "", "When the run became public.", "2021-05-05"],
+  ["fastq_urls", "text[]", "", "Download URLs (ENA FTP/Aspera or SRA), one per file.", ""],
+  ["fastq_md5", "text[]", "", "MD5 checksums from the archive, in the same order as fastq_urls; checked after download.", ""],
+  ["fastq_bytes", "bigint[]", "", "File sizes, for planning disk space.", ""],
+  ["processing_state", "text", "NN", "One of: queued, processed, skipped_not_16s, skipped_not_used, failed. What the bioinformatics workflow does with the run; it reads queued runs from analysis.samplesheet_16s.", "queued"],
+  ["fastq_local_path", "text", "", "Where the downloaded FASTQ sits under DATA_DIR while it exists.", "fastq/ibd-2022-35756051/SRR15400632_1.fastq.gz"],
+  ["download_state", "text", "NN", "One of: not_downloaded, downloaded, failed, deleted. Raw FASTQ is deleted once the run is processed and its results are loaded and checked; a CHECK forbids deleted unless processing_state is processed. The URLs above re-fetch it.", "deleted"],
+  ["fastq_deleted_at", "timestamptz", "", "When the local FASTQ was deleted.", ""],
+  ["raw_record_id", "bigint", "FK → raw.api_record", "The runinfo / filereport record this row was parsed from.", ""]
+]},
+{ s: "core", t: "document",
+  d: "Any file the curation used: full text (XML or PDF), supplementary files, emails from authors. The file itself is on disk; the row stores where, its checksum, and who supplied it.",
+  why: "Evidence quotes and label locators point into documents, so every claim can be traced to a file. When a person supplies a paywalled PDF, it enters here and the study resumes.",
+  f: [
+  ["document_id", "bigint", "PK", "Internal id.", ""],
+  ["paper_id", "bigint", "FK → core.paper", "The paper the file belongs to.", ""],
+  ["study_id", "bigint", "FK → core.study", "The study, for files not tied to a paper (an author's email).", ""],
+  ["kind", "text", "NN", "One of: fulltext_xml, fulltext_pdf, supplement, external_metadata (a per-sample file outside the paper), author_correspondence, archive_attachment, other.", "external_metadata"],
+  ["original_name", "text", "", "File name as published.", "41586_2019_1237_MOESM4_ESM.xlsx"],
+  ["source_url", "text", "", "Where it was downloaded from. Null for files a person supplied.", ""],
+  ["origin", "text", "NN", "Who published this copy: publisher, pmc, europepmc, author_site, data_repository (Zenodo, figshare, Qiita), third_party_mirror (someone else's copy of the authors' file), author_email, human_upload. Cohort rules can exclude labels from weaker origins.", "third_party_mirror"],
+  ["obtained_by", "text", "NN", "agent, script, or human.", "human"],
+  ["license", "text", "", "License, when known.", "cc-by"],
+  ["redistributable", "boolean", "NN", "Whether the file may be shared. Default false. No document is committed to git regardless.", "false"],
+  ["storage_path", "text", "NN", "Path relative to DATA_DIR.", "docs/ibd-2021-lloyd/S4.xlsx"],
+  ["sha256", "text", "UQ NN", "Checksum; also prevents storing the same file twice.", ""],
+  ["bytes", "bigint", "", "File size.", ""],
+  ["mime_type", "text", "", "MIME type.", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  ["retrieved_at", "timestamptz", "NN", "When the file was obtained.", ""],
+  ["log_id", "bigint", "FK → ops.activity_log", "The log entry that added it.", ""]
+]},
+{ s: "core", t: "extraction",
+  d: "Study-level facts extracted from a paper by an LLM or a person: region, primers, platform, reported counts, case definition, and so on. Each row is one field with its value and a verbatim evidence quote.",
+  why: "This is how extraction accuracy is measured against the gold set, and how every value in core.study and core.protocol can be traced to a sentence. quote_verified is set by code, not by the model.",
+  f: [
+  ["extraction_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN IDX", "The study.", ""],
+  ["protocol_id", "bigint", "FK → core.protocol", "For protocol fields when the study has several protocols.", ""],
+  ["field", "text", "NN", "Field name, from the Pydantic extraction schema: variable_region, forward_primer_seq, platform, case_definition, … (numbers the paper states go to core.reported_count)", "variable_region"],
+  ["value", "text", "", "Value as text.", "V4"],
+  ["value_json", "jsonb", "", "Structured value when the field is not a single string (a primer pair, a list of countries).", ""],
+  ["not_reported", "boolean", "NN", "True if the extractor concluded the paper does not state this field. Distinguishes \"not stated\" from \"not extracted yet\". Default false.", "false"],
+  ["evidence_quote", "text", "", "Verbatim sentence or phrase supporting the value. Required unless not_reported.", "\"the V4 region was amplified using 515F/806R\""],
+  ["evidence_document_id", "bigint", "FK → core.document", "The document the quote is from.", ""],
+  ["evidence_location", "jsonb", "", "Section, page, and character offsets of the quote, filled in by the quote checker.", "{\"section\":\"Methods\",\"char_start\":10422}"],
+  ["quote_verified", "boolean", "", "Set by code: the quote was found in the document after whitespace and Unicode normalization. Null until checked.", "true"],
+  ["extractor", "text", "NN", "Pinned model id, or human:<initials> for manual entries (including the gold set).", "claude-sonnet-5-5"],
+  ["llm_call_id", "bigint", "FK → raw.llm_call", "The call that produced it.", ""],
+  ["schema_version", "text", "NN", "Version of the Pydantic extraction schema.", "extract-v1"],
+  ["is_gold", "boolean", "NN", "True for hand-labeled gold-set rows. Default false.", "false"],
+  ["status", "text", "NN", "One of: proposed, accepted, rejected, superseded. Accepted values are copied to core.study / core.protocol.", "accepted"],
+  ["reviewed_by", "text", "", "Who accepted or rejected it: validator code, or a person.", "validator"],
+  ["model_confidence", "numeric(3,2)", "", "Confidence the model reported. Informational only; never used to accept a value.", "0.9"]
+]},
+
+/* ───────────── raw ───────────── */
+{ s: "raw", t: "api_record",
+  d: "Every response fetched from an external API, stored as received: Europe PMC, PubMed, SRA runinfo, BioSample, BioProject, ENA filereport, PMC OA.",
+  why: "Parsers and curation rules will change. Keeping the original responses means re-parsing never needs a re-download, and comparing two fetches of the same accession shows when an archive record was edited.",
+  f: [
+  ["record_id", "bigint", "PK", "Internal id.", ""],
+  ["source", "text", "NN", "One of: epmc_search, epmc_record, pubmed, pmc_oa, sra_runinfo, biosample, bioproject, ena_filereport, other.", "biosample"],
+  ["accession", "text", "IDX", "The id queried (PMID, BioSample, BioProject…). Null for search queries.", "SAMN17123456"],
+  ["request", "text", "NN", "Request URL or query, with API keys removed.", ""],
+  ["http_status", "smallint", "", "HTTP status code.", "200"],
+  ["content_type", "text", "", "json, xml, csv, or text.", "xml"],
+  ["payload_json", "jsonb", "", "The response, when it is JSON (or XML converted losslessly).", ""],
+  ["payload_text", "text", "", "The response as text, when it is XML or CSV and kept as is.", ""],
+  ["payload_sha256", "text", "IDX", "Checksum of the payload. A re-fetch with the same checksum only updates last_seen_at instead of adding a row.", ""],
+  ["fetched_at", "timestamptz", "NN", "First time this exact payload was fetched.", ""],
+  ["last_seen_at", "timestamptz", "NN", "Most recent fetch that returned the same payload.", ""],
+  ["fetcher_version", "text", "", "Version of the script that fetched it.", ""]
+]},
+{ s: "raw", t: "archive_attribute",
+  d: "Every field of every archive record, flattened to one row per accession and field, exactly as submitted: BioSample attributes, the sample name and title, SRA experiment title and alias, library name, run alias, ENA sample fields.",
+  why: "The label-locating agent's first question is which archive field separates the groups. In v0.1 this table held only BioSample attributes; in the test studies the labels were also in the BioSample sample name (35756051) and the SRA experiment title (37661264), while SRA runinfo and the ENA filereport left the label columns empty. One GROUP BY over this table answers the question for all of them.",
+  f: [
+  ["accession", "text", "PK", "The record's accession: SAMN/SAMEA, SRX/ERX, SRR/ERR.", "SRX13839265"],
+  ["entity_type", "text", "NN IDX", "biosample, experiment, run, ena_sample.", "experiment"],
+  ["field_name", "text", "PK", "Field or attribute name as submitted; built-in fields get a fixed name (title, alias, sample_name, library_name, description).", "title"],
+  ["record_id", "bigint", "PK FK → raw.api_record", "The record it was parsed from, so attribute history is kept.", ""],
+  ["harmonized_name", "text", "IDX", "NCBI harmonized name when present.", "host_disease"],
+  ["value", "text", "", "Value as submitted.", "CD_16S_mucosa"],
+  ["project_accession", "text", "IDX", "The BioProject, so a whole study's attributes can be scanned at once.", "PRJNA800628"]
+]},
+{ s: "raw", t: "supplement_table",
+  d: "A table parsed out of a supplementary file or paper PDF, stored as found (all cells as strings).",
+  why: "The agent reads labels from here, and observation.source_locator points to a row and column of it. Storing the parse means the same input is used on every retry and in review.",
+  f: [
+  ["table_id", "bigint", "PK", "Internal id.", ""],
+  ["document_id", "bigint", "FK → core.document NN", "The file.", ""],
+  ["sheet_or_table", "text", "", "Sheet name, or table caption / number in a PDF.", "Table S1"],
+  ["table_index", "smallint", "NN", "Position within the document, starting at 0.", "0"],
+  ["n_rows", "integer", "", "Data rows.", "1338"],
+  ["n_cols", "integer", "", "Columns.", "12"],
+  ["header", "jsonb", "", "Header row(s) as an array of strings.", "[\"Sample\",\"Group\",\"Age\"]"],
+  ["rows", "jsonb", "", "Rows as arrays of strings, exactly as parsed.", ""],
+  ["parser", "text", "NN", "Tool and version: openpyxl, pandas, pdfplumber, camelot, or vision:<model> when a table that exists only as an image was transcribed by a model (29335008 Tables S1 and S2).", "vision:claude-opus-5-5"],
+  ["needs_review", "boolean", "NN", "True when the parse cannot be checked mechanically (image transcription, OCR). Default false.", "true"],
+  ["parse_warnings", "text[]", "", "Merged cells, lost rows, OCR used, etc.", ""]
+]},
+{ s: "raw", t: "llm_call",
+  d: "Every LLM request and full response, with the model, prompt version, and cost.",
+  why: "LLM output is not deterministic. Downstream steps read output_parsed from here instead of calling the model again, which makes runs replayable. Cost and token columns feed the model comparison (accuracy and cost per paper).",
+  f: [
+  ["llm_call_id", "bigint", "PK", "Internal id.", ""],
+  ["purpose", "text", "NN IDX", "One of: screen_study, extract_metadata, locate_labels, map_sample_names, other.", "extract_metadata"],
+  ["study_id", "bigint", "FK → core.study", "The study the call was about.", ""],
+  ["provider", "text", "NN", "Model vendor.", "anthropic"],
+  ["model", "text", "NN", "Exact pinned model id.", "claude-sonnet-5-5"],
+  ["model_params", "jsonb", "", "temperature, max_tokens, and other settings.", "{\"temperature\":0}"],
+  ["prompt_name", "text", "NN", "Prompt file name in the repo.", "prompts/extract_metadata.md"],
+  ["prompt_version", "text", "NN", "Git commit of the prompt file at call time.", "a1b2c3d"],
+  ["schema_version", "text", "", "Pydantic output schema version.", "extract-v1"],
+  ["request", "jsonb", "NN", "Full request: messages, tool definitions, attached document references.", ""],
+  ["response", "jsonb", "NN", "Full raw response, including tool calls.", ""],
+  ["output_parsed", "jsonb", "", "The validated structured output. What downstream steps read.", ""],
+  ["parse_ok", "boolean", "NN", "Whether the response validated against the schema.", "true"],
+  ["parse_error", "text", "", "Validation error when parse_ok is false.", ""],
+  ["input_tokens", "integer", "", "Input tokens.", ""],
+  ["output_tokens", "integer", "", "Output tokens.", ""],
+  ["cached_tokens", "integer", "", "Input tokens served from cache.", ""],
+  ["cost_usd", "numeric(10,5)", "", "Computed cost at the price in effect.", ""],
+  ["latency_ms", "integer", "", "Wall time.", ""],
+  ["orchestrator", "text", "", "claude_code_subagent or langgraph.", "langgraph"],
+  ["trace_id", "text", "", "Id in the tracing system (LangGraph thread / checkpoint, LangSmith run).", ""],
+  ["created_at", "timestamptz", "NN", "When the call was made.", ""]
+]},
+
+/* ───────────── bio ───────────── */
+{ s: "bio", t: "reference_db",
+  d: "Reference databases used for taxonomic classification.",
+  why: "Taxonomy depends on the reference and its version. Keeping them as rows lets the same ASV carry assignments from SILVA and GTDB side by side.",
+  f: [
+  ["ref_db_id", "smallint", "PK", "Internal id.", ""],
+  ["name", "text", "NN", "SILVA, GTDB, RDP, Greengenes2.", "SILVA"],
+  ["version", "text", "NN", "Release. UQ together with name.", "138.2"],
+  ["file_url", "text", "", "Where the training file came from.", ""],
+  ["sha256", "text", "", "Checksum of the file used.", ""],
+  ["released", "date", "", "Release date.", ""]
+]},
+{ s: "bio", t: "pipeline_run",
+  d: "One execution of the Nextflow workflow on one study and protocol (each region is processed on its own).",
+  why: "Every count is tied to the exact pipeline version, parameters, containers, and reference used, so results can be reproduced and a re-run with new settings can sit next to the old one.",
+  f: [
+  ["pipeline_run_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN", "The study.", ""],
+  ["protocol_id", "bigint", "FK → core.protocol NN", "The protocol whose runs were processed together.", ""],
+  ["pipeline_name", "text", "NN", "Workflow name.", "nf-core/ampliseq"],
+  ["pipeline_version", "text", "NN", "Release or tag.", "2.x"],
+  ["pipeline_commit", "text", "", "Git commit of the workflow (and of this repo's wrapper).", ""],
+  ["nextflow_version", "text", "", "Nextflow version.", ""],
+  ["params", "jsonb", "NN", "All parameters: primers, truncation lengths, maxEE, pooling, etc.", "{\"trunclenf\":230,\"trunclenr\":200}"],
+  ["containers", "jsonb", "", "Container image digests used per process.", ""],
+  ["ref_db_id", "smallint", "FK → bio.reference_db", "Reference used for classification in this run.", ""],
+  ["samplesheet_sha256", "text", "", "Checksum of the database-generated samplesheet.", ""],
+  ["host", "text", "", "Machine the run executed on.", ""],
+  ["started_at", "timestamptz", "", "Start.", ""],
+  ["finished_at", "timestamptz", "", "End.", ""],
+  ["status", "text", "NN", "One of: running, succeeded, failed, superseded.", "succeeded"],
+  ["error_message", "text", "", "Failure summary.", ""],
+  ["is_current", "boolean", "NN", "The run that analysis views use for this study and protocol. One current run per protocol (partial unique index).", "true"],
+  ["report_path", "text", "", "MultiQC / ampliseq summary report, relative to DATA_DIR.", ""]
+]},
+{ s: "bio", t: "run_qc",
+  d: "Read tracking per sequencing run per pipeline run: how many reads survived each step.",
+  why: "Low depth is an ML filter, and a collapse at the merge step usually means the region, primers, or truncation lengths are wrong. pct_primer_found confirms (or contradicts) the region the LLM extracted.",
+  f: [
+  ["pipeline_run_id", "bigint", "PK FK → bio.pipeline_run", "The pipeline run.", ""],
+  ["run_accession", "text", "PK FK → core.run", "The sequencing run.", ""],
+  ["reads_input", "bigint", "", "Reads (pairs) in.", ""],
+  ["pct_primer_found", "numeric(5,2)", "", "Percent of reads where Cutadapt found the expected primers.", "97.8"],
+  ["reads_after_trim", "bigint", "", "After primer trimming.", ""],
+  ["reads_filtered", "bigint", "", "After DADA2 quality filtering.", ""],
+  ["reads_denoised", "bigint", "", "After denoising.", ""],
+  ["reads_merged", "bigint", "", "After pair merging (paired runs).", ""],
+  ["reads_nonchim", "bigint", "", "After chimera removal: the final depth.", ""],
+  ["status", "text", "NN", "ok, low_depth, failed.", "ok"],
+  ["failure_reason", "text", "", "Why it failed or was flagged.", ""]
+]},
+{ s: "bio", t: "asv",
+  d: "Unique amplicon sequence variants across all studies. The same exact sequence is the same row, whichever study found it.",
+  why: "Global identity lets studies with the same region be merged at ASV level, and taxonomy is assigned once per sequence.",
+  f: [
+  ["asv_id", "bigint", "PK", "Internal id.", ""],
+  ["sequence", "text", "NN", "The ASV sequence (A, C, G, T).", "TACGGAGGGTGCAAGCG…"],
+  ["sequence_md5", "text", "UQ NN", "MD5 of the sequence, the lookup key used by loaders and in ampliseq output.", ""],
+  ["length", "smallint", "NN", "Sequence length.", "253"],
+  ["region_inferred", "text", "", "Region inferred by placing the sequence on E. coli 16S coordinates. Cross-checks protocol.variable_region.", "V4"],
+  ["first_pipeline_run_id", "bigint", "FK → bio.pipeline_run", "Pipeline run that first produced it.", ""]
+]},
+{ s: "bio", t: "abundance",
+  d: "Raw read counts: one row per pipeline run, sequencing run, and ASV, nonzero counts only.",
+  why: "Raw counts (not relative abundance) are kept so any normalization can be applied later. Keyed by run; samples with several runs are summed in the analysis views.",
+  f: [
+  ["pipeline_run_id", "bigint", "PK FK → bio.pipeline_run", "Which processing produced the count.", ""],
+  ["run_accession", "text", "PK FK → core.run", "The sequencing run.", ""],
+  ["asv_id", "bigint", "PK FK → bio.asv", "The ASV.", ""],
+  ["count", "integer", "NN", "Reads assigned to this ASV after chimera removal. Always > 0.", "1532"]
+]},
+{ s: "bio", t: "taxonomy_assignment",
+  d: "Taxonomic classification of an ASV against one reference database with one classifier. An ASV can have several rows.",
+  why: "Re-classifying against a new reference is an insert, not a re-run of DADA2. Per-rank confidence allows stricter cut-offs later.",
+  f: [
+  ["asv_id", "bigint", "PK FK → bio.asv", "The ASV.", ""],
+  ["ref_db_id", "smallint", "PK FK → bio.reference_db", "Reference used.", ""],
+  ["classifier", "text", "PK", "Classifier and version: dada2_assigntaxonomy 1.x, qiime2_naive_bayes, idtaxa.", "dada2_assigntaxonomy"],
+  ["domain", "text", "", "", "Bacteria"],
+  ["phylum", "text", "", "", "Bacillota"],
+  ["class", "text", "", "", "Clostridia"],
+  ["order_name", "text", "", "Order (\"order\" is a reserved word in SQL).", "Lachnospirales"],
+  ["family", "text", "", "", "Lachnospiraceae"],
+  ["genus", "text", "IDX", "Genus. The level used to merge studies with different regions.", "Roseburia"],
+  ["species", "text", "", "Species, when the classifier assigns it (exact matching only).", ""],
+  ["confidence", "jsonb", "", "Bootstrap confidence per rank.", "{\"genus\":0.93}"],
+  ["min_bootstrap", "smallint", "", "Cut-off used: ranks below it are null.", "80"],
+  ["pipeline_run_id", "bigint", "FK → bio.pipeline_run", "Run that produced the assignment, if done inside the pipeline.", ""]
+]},
+
+/* ───────────── ops ───────────── */
+{ s: "ops", t: "activity_log",
+  d: "Append-only record of every action on the project, by agents, scripts, and people. One timeline per study.",
+  why: "It makes each study's state readable at any time and is the input for the later gap-report agent. History cannot be reconstructed afterwards, so it exists from the first version. UPDATE and DELETE are revoked on this table.",
+  f: [
+  ["log_id", "bigint", "PK", "Internal id; increasing order is time order.", ""],
+  ["at", "timestamptz", "NN IDX", "When the action finished. Default now().", ""],
+  ["study_id", "bigint", "FK → core.study IDX", "The study, when the action concerns one.", ""],
+  ["entity_type", "text", "", "What the action touched: paper, study, sample, run, document, pipeline_run, human_task.", "document"],
+  ["entity_id", "text", "", "Id of that entity (text, since some are accessions).", "PRJNA685746"],
+  ["actor_type", "text", "NN", "One of: agent, script, human.", "agent"],
+  ["actor", "text", "NN", "Which one: agent name and version, script path, or human:<initials>.", "label_locator@v1"],
+  ["session_id", "text", "IDX", "Groups entries from one agent run, LangGraph thread, or script invocation.", ""],
+  ["action", "text", "NN IDX", "Verb from a controlled list: search_literature, screen_study, fetch_fulltext, extract_metadata, locate_labels, map_sample_names, validate_counts, upload_document, open_task, close_task, run_pipeline, load_results, edit_curated_value.", "fetch_fulltext"],
+  ["input", "jsonb", "", "Main inputs of the action (ids, parameters), enough to repeat it.", ""],
+  ["outcome", "text", "NN", "One of: success, failure, blocked, skipped.", "blocked"],
+  ["reason", "text", "", "Human-readable reason. Required when outcome is not success.", "publisher returns 403 to automated requests"],
+  ["detail", "jsonb", "", "Anything else: counts, error text, file ids.", ""],
+  ["llm_call_id", "bigint", "FK → raw.llm_call", "The LLM call behind this action, if any.", ""],
+  ["parent_log_id", "bigint", "FK → ops.activity_log", "Parent entry, for retries and sub-steps.", ""],
+  ["duration_ms", "integer", "", "How long the action took.", ""]
+]},
+{ s: "ops", t: "human_task",
+  d: "The queue of things only a person can do: obtain a paywalled PDF, download a supplement a publisher blocks, email authors, resolve a label conflict, review an extraction.",
+  why: "The agent records exactly what is missing and moves on. When the task is closed (for example a PDF is uploaded into core.document), the study resumes from resume_stage.",
+  f: [
+  ["task_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study IDX", "The study waiting on it.", ""],
+  ["kind", "text", "NN", "One of: obtain_fulltext, obtain_supplement, contact_authors, resolve_conflict (an observation conflict_group), review_value_map, review_transcription, review_extraction, review_name_map, other. Open tasks are also the record of what is still unknown, for the later gap reports.", "contact_authors"],
+  ["title", "text", "NN", "One line for the queue view.", "Get PDF of PMID 34238227"],
+  ["what_is_missing", "text", "NN", "Exactly what is needed.", "Supplementary Table S2 (sample metadata)"],
+  ["why_blocked", "text", "", "Why the agent could not get it.", "not open access"],
+  ["suggested_action", "text", "", "What the person could do.", "download from journal site via library access"],
+  ["priority", "smallint", "NN", "1 (high) to 3 (low). Default 2. Large studies rank higher.", "1"],
+  ["status", "text", "NN", "One of: open, in_progress, done, wont_do.", "open"],
+  ["resume_stage", "text", "", "The curation stage to resume from once done.", "locate_labels"],
+  ["resolution", "text", "", "What was done.", "PDF uploaded"],
+  ["resolution_document_id", "bigint", "FK → core.document", "The file the person supplied, if any.", ""],
+  ["opened_log_id", "bigint", "FK → ops.activity_log NN", "Log entry that opened the task.", ""],
+  ["closed_log_id", "bigint", "FK → ops.activity_log", "Log entry that closed it.", ""],
+  ["opened_at", "timestamptz", "NN", "", ""],
+  ["closed_at", "timestamptz", "", "", ""]
+]},
+{ s: "ops", t: "validation_check",
+  d: "Results of the code checks that judge agent output: sample counts against the paper, every run mapped, quotes found, primers seen in reads.",
+  why: "The agent does not grade its own work. Each attempt's checks are recorded, so a retry can be told exactly what failed, and the dashboard can show why a study went to the human queue.",
+  f: [
+  ["check_id", "bigint", "PK", "Internal id.", ""],
+  ["study_id", "bigint", "FK → core.study NN IDX", "The study.", ""],
+  ["attempt", "smallint", "NN", "Attempt number of the step being validated, starting at 1.", "2"],
+  ["check_name", "text", "NN", "reported_count (one per core.reported_count row), join_read_counts (archive read counts equal the supplement's per-sample counts), all_runs_labelled, labels_unique, quote_found, primers_in_reads, region_matches_asvs.", "reported_count"],
+  ["count_id", "bigint", "FK → core.reported_count", "The paper number this check tested.", ""],
+  ["expected", "numeric", "", "Value from the paper or other reference.", "17"],
+  ["observed", "numeric", "", "Value computed from the curated records.", "18"],
+  ["tolerance", "numeric", "", "Allowed difference (for example dropped low-depth samples).", "0"],
+  ["result", "text", "NN", "pass, fail, not_comparable (the curated data cannot compute it, e.g. a mean age when ages are not published per subject). Failures are kept, not retried away: 35756051's two off-by-one age counts stay failed with an explanation.", "fail"],
+  ["detail", "jsonb", "", "Explanation for the retry prompt: which samples are missing or extra.", ""],
+  ["log_id", "bigint", "FK → ops.activity_log", "The validation step's log entry.", ""],
+  ["checked_at", "timestamptz", "NN", "", ""]
+]},
+
+/* ───────────── analysis ───────────── */
+{ s: "analysis", t: "sample_wide", view: "view",
+  d: "One row per biological sample with its labels, subject, and every technical covariate joined in. The table most people will query.",
+  why: "Keeps joins out of the ML and dashboard code, and puts the batch-effect covariates next to the label.",
+  f: [
+  ["sample_id, study_key, disease", "", "", "Identity of the sample and its study.", ""],
+  ["subject_id, subject_link, family_key, diagnosis, control_type, sex, age_years, bmi, country", "", "", "From core.subject and core.sample.", ""],
+  ["group_label, group_role, sample_type, inflamed, disease_activity, timepoint, used_in_paper, n_open_conflicts", "", "", "From core.study_group and core.sample. Facts only; no case/control column.", ""],
+  ["extra", "", "", "Subject extra and sample extra merged: the long-tail fields a data scientist can unpack (relationship_to_proband, c_difficile_infection, treatment_response…).", ""],
+  ["variable_region, forward_primer_seq, reverse_primer_seq, platform, instrument_model, layout, observed_read_length, dna_extraction_kit, center_name", "", "", "Technical covariates from core.protocol, core.run, core.archive_project.", ""],
+  ["pipeline_version, ref_db, reads_nonchim", "", "", "From the current bio.pipeline_run and bio.run_qc (summed over runs).", ""]
+]},
+{ s: "analysis", t: "genus_counts", view: "materialized view",
+  d: "Counts per sample and genus, from the current pipeline run and a chosen reference database, summed over the sample's runs.",
+  why: "Genus level is how studies with different regions are combined in the first version. Materialized because it aggregates the largest table; refreshed after each load.",
+  f: [
+  ["sample_id", "", "", "The sample.", ""],
+  ["ref_db_id", "", "", "Which reference the genus names come from.", ""],
+  ["genus", "", "", "Genus name; unassigned reads grouped as the lowest assigned rank plus \"_unclassified\".", "Lachnospiraceae_unclassified"],
+  ["count", "", "", "Summed reads.", ""],
+  ["rel_abundance", "", "", "count / sample total.", ""]
+]},
+{ s: "analysis", t: "cohort_definition", view: "table",
+  d: "Named, versioned rules that turn facts into a modelling cohort: who is a case, who is a control, which samples are excluded. The only place case/control is decided.",
+  why: "The open questions from the test studies (are healthy relatives controls? is UC with C. difficile a UC case? are labels from a third-party copy acceptable?) have no single answer; they depend on the analysis and on how much statistical power is needed. Writing the answers down as rules keeps them explicit, lets two cohorts coexist, and records which one each model used.",
+  f: [
+  ["cohort_id", "smallint", "PK", "Internal id.", ""],
+  ["name", "text", "UQ NN", "Short name.", "ibd_vs_healthy_strict"],
+  ["version", "smallint", "NN", "Bumped on every change; models record the version they used.", "2"],
+  ["description", "text", "NN", "The rule in words.", "IBD stool samples vs unrelated healthy volunteers; no conflicts on diagnosis"],
+  ["case_rule", "jsonb", "NN", "Conditions on sample_wide columns and extra that make a case.", "{\"diagnosis\":[\"cd\",\"uc\",\"ibdu\"]}"],
+  ["control_rule", "jsonb", "NN", "Conditions that make a control.", "{\"diagnosis\":\"healthy\",\"control_type\":[\"healthy_volunteer\"]}"],
+  ["exclude_rule", "jsonb", "", "Conditions that drop a sample regardless: open conflicts, weak document origin, unknown subject link, not used in paper, low depth.", "{\"n_open_conflicts\":\">0\",\"subject_link\":\"unknown\"}"],
+  ["sample_types", "text[]", "", "Allowed sample types.", "{stool}"],
+  ["min_reads", "integer", "", "Minimum final depth.", "5000"],
+  ["created_by", "text", "NN", "Who wrote the rule.", "human:jc"],
+  ["created_at", "timestamptz", "NN", "", ""]
+]},
+{ s: "analysis", t: "ml_samples", view: "view",
+  d: "The samples a cohort definition selects, with the label and the grouping keys for cross-validation. One row per cohort and sample.",
+  why: "Generated from analysis.cohort_definition, so every model's training set can be rebuilt exactly from its cohort name and version.",
+  f: [
+  ["cohort_id, cohort_version", "", "", "Which rule selected the sample.", ""],
+  ["sample_id", "", "", "The sample.", ""],
+  ["label", "", "", "1 for case, 0 for control.", ""],
+  ["study_id", "", "", "Group for leave-one-study-out cross-validation.", ""],
+  ["cv_group", "", "", "Grouping key so related samples never span train and test: family_key when set, else subject_id. Samples with subject_link unknown get their study as the group unless the cohort excludes them.", ""],
+  ["variable_region, platform", "", "", "Kept for stratified reporting.", ""]
+]},
+{ s: "analysis", t: "study_progress", view: "view",
+  d: "One row per study for the dashboard: stage, counts, open tasks, last activity.",
+  why: "The dashboard's study list, and the starting point for the later gap reports.",
+  f: [
+  ["study_key, curation_state, blocked_reason", "", "", "Where the study stands.", ""],
+  ["n_samples, n_with_group, n_open_conflicts, n_used_in_paper", "", "", "Sample counts from core.sample.", ""],
+  ["n_checks_failed, n_checks_not_comparable", "", "", "From ops.validation_check.", ""],
+  ["n_runs, n_runs_processed", "", "", "From core.run and bio.run_qc.", ""],
+  ["n_open_tasks", "", "", "From ops.human_task.", ""],
+  ["last_activity_at, last_outcome", "", "", "From ops.activity_log.", ""]
+]}
+];
+
+const QUESTIONS = [
+  { id: "Q1", t: "Where does the diagnosis live: subject or sample?",
+    p: "Diagnosis (CD, UC, healthy) belongs to the person; disease activity and medication change between visits and belong to the sample. When a study gives labels only per sample, the sample carries group_id and the subject is linked as subject_link allows.",
+    pick: "Diagnosis on core.subject; group_id, inflamed, activity, medication on core.sample; case/control only in analysis.cohort_definition." },
+  { id: "Q2", t: "Observations only, or observations plus typed columns?",
+    p: "Every value lives in core.observation. Copying accepted values of common fields into typed columns (sex, age_years, diagnosis, sample_type) makes everyday queries simple and indexable, at the cost of keeping two places in sync. The test-study sample sheets used a source_* column per field; that cannot hold the 23013615 sex conflict.",
+    pick: "Observations are the record; about ten common fields are also typed columns, rebuilt by code from accepted observations, never edited by hand." },
+  { id: "Q3", t: "Count table keyed by run or by sample?",
+    p: "The pipeline processes runs. Keying by run keeps lane-level information (useful for batch effects); the analysis views sum runs per sample.",
+    pick: "Key bio.abundance by run_accession." },
+  { id: "Q4", t: "CHECK constraints or lookup tables for controlled values?",
+    p: "Values of curated fields (sex, sample_type, relationship_to_proband…) now live in core.field_dictionary.allowed_values, which grows with the data. Structural values the code depends on (observation.status, sample.subject_link, document.origin) change rarely.",
+    pick: "Field values via core.field_dictionary; CHECK constraints only for structural columns." },
+  { id: "Q5", t: "How much ontology mapping (MONDO, UBERON) in the first version?",
+    p: "Ontology ids make joining with GMrepo or MicrobiomeDB easier but add curation work per value.",
+    pick: "Optional columns, filled only for disease and body site." },
+  { id: "Q6", t: "Is migration tooling part of Phase 1?",
+    p: "Options: plain numbered SQL files applied by a small script, or Alembic (needs SQLAlchemy models), or sqitch.",
+    pick: "Numbered SQL files plus a tiny runner; revisit if the schema churns." },
+  { id: "Q7", t: "When is a long-tail field promoted to a typed column?",
+    p: "Promotion makes a field easy to query but adds a column to keep in sync. A count of studies using each field comes from core.observation.",
+    pick: "Promote when a field is used by 5 or more studies, or when a cohort rule or the dashboard needs it. Until then it stays in observations and extra JSONB." },
+  { id: "Q8", t: "Labels from a third-party copy of the authors' file: store, and use?",
+    p: "23013615's only per-sample labels come from a Zenodo copy (MicrobiomeHD) of a file whose original host is dead. Excluding it loses 228 labelled runs; including it trusts an intermediary.",
+    pick: "Always store, with document.origin = third_party_mirror. Each cohort decides; the default cohort accepts it and reports how many samples depend on it." },
+  { id: "Q9", t: "Should the five study folders be loaded as-is, or re-curated into observations first?",
+    p: "The sample sheets in studies/ already carry sources per field, but in a wide format with one value per field, and 23013615's sex is blank rather than two conflicting rows.",
+    pick: "Write a loader that turns sra_runs.tsv into raw.archive_attribute and each sample sheet into observations; re-curate only the fields where a conflict was flattened." },
+  { id: "Q10", t: "Later: a pipeline_issue table and LLM triage of pipeline failures?",
+    p: "Deferred to save tokens; not built (added 2026-11-15). Pipeline problems are now spread over log.jsonl, preflight review_reasons, qc_gate reasons and run_qc.failure_reason. The 454 study (23013615) shows the hard case: there is no error message, because preflight found the quality scores replaced. See docs/demo-stories.md.",
+    pick: "One table, ops.pipeline_issue (or an extension of ops.validation_check). Each row: pipeline_run, run_accession, stage, detected_by (nextflow/preflight/qc_gate/collect), category from an enum, severity, evidence path + sha256, classified_by (rule:<id> or llm:<model>/<prompt version>), confidence, suggested action, status, and resolution. Rules classify first. A small model (Haiku) only sees crashes that no rule matches, must return enum JSON with verbatim evidence lines that are checked against the log, and never changes scientific parameters or deletes data." }
+];
+
+/* ───────────── rendering ───────────── */
+const FB_KEY = "agentic16s-schema-feedback-v2";
+let FB = {};
+try { FB = JSON.parse(localStorage.getItem(FB_KEY) || "{}") || {}; } catch (e) { FB = {}; }
+function saveFB() { try { localStorage.setItem(FB_KEY, JSON.stringify(FB)); } catch (e) {} updateCount(); }
+const STATUS = { ok: "Looks right", change: "Change", remove: "Remove", question: "Question" };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
+const fq = (tbl) => tbl.s + "." + tbl.t;
+
+function keysHTML(k) {
+  if (!k) return "";
+  const out = []; let rest = k;
+  const fk = rest.match(/FK → (\S+)/);
+  if (fk) { rest = rest.replace(fk[0], ""); }
+  rest.split(/\s+/).filter(Boolean).forEach(x => out.push(`<span class="key ${x === "PK" ? "pk" : ""}">${esc(x)}</span>`));
+  if (fk) out.push(`<a class="key fk" href="#t-${esc(fk[1])}" title="foreign key">→ ${esc(fk[1])}</a>`);
+  return out.join("");
+}
+
+function renderMap() {
+  const m = document.getElementById("layermap");
+  m.innerHTML = Object.entries(LAYERS).map(([k, L]) => `
+    <div class="layer L-${k}">
+      <h3>${esc(L.title)} <span class="muted" style="font-weight:500">· ${esc(L.name)}</span></h3>
+      <p>${esc(L.blurb)}</p>
+      ${SCHEMA.filter(t => t.s === k).map(t => `<a href="#t-${fq(t)}">${esc(t.t)}</a>`).join("")}
+    </div>`).join("");
+  const chips = document.getElementById("layers");
+  chips.innerHTML = `<button class="chip" aria-pressed="true" data-layer="">All</button>` +
+    Object.keys(LAYERS).map(k => `<button class="chip" aria-pressed="false" data-layer="${k}">${k}</button>`).join("");
+}
+
+function renderTables() {
+  const host = document.getElementById("tablelist");
+  host.innerHTML = SCHEMA.map(t => {
+    const id = fq(t);
+    const rows = t.f.map(f => {
+      const key = id + "." + f[0];
+      return `<tr data-key="${esc(key)}" data-text="${esc((f.join(" ")).toLowerCase())}">
+        <td class="n">${esc(f[0])}</td><td class="ty">${esc(f[1])}</td><td class="k">${keysHTML(f[2])}</td>
+        <td>${esc(f[3])}</td><td class="ex">${esc(f[4])}</td>
+        <td class="fb"><button class="btn small" data-edit="${esc(key)}">Comment</button></td></tr>`;
+    }).join("");
+    return `<article class="card tbl L-${t.s}" id="t-${id}" data-layer="${t.s}" data-text="${esc((id + " " + t.d + " " + t.why).toLowerCase())}">
+      <header><h3><span class="s">${esc(t.s)}.</span>${esc(t.t)}</h3><span class="tag">${esc(t.view || LAYERS[t.s].name)}</span><span class="muted" style="font-size:.84rem">${t.f.length} ${t.view ? "columns" : "fields"}</span></header>
+      <p class="desc">${esc(t.d)}</p>
+      <p class="why"><b>Why it is shaped this way:</b> ${esc(t.why)}</p>
+      <div class="tactions">
+        <button class="btn small" data-tnote="${id}" data-mode="table">Comment on table</button>
+        <button class="btn small" data-tnote="${id}" data-mode="add">Propose a field</button>
+      </div>
+      <div class="tnote" id="tn-${id}"></div>
+      <div class="fbsum" id="fs-${id}"></div>
+      <div style="overflow-x:auto"><table class="f">
+        <thead><tr><th>Field</th><th>Type</th><th>Keys</th><th>Meaning</th><th>Example</th><th><span class="hidden">Feedback</span></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+    </article>`;
+  }).join("");
+  SCHEMA.forEach(t => paintTable(fq(t)));
+}
+
+function renderQuestions() {
+  document.getElementById("qlist").innerHTML = QUESTIONS.map(q => {
+    const key = "question." + q.id;
+    return `<div class="q" id="q-${q.id}">
+      <h3>${q.id}. ${esc(q.t)}</h3><p>${esc(q.p)}</p>
+      <p class="pick">Current proposal: <b>${esc(q.pick)}</b></p>
+      <div class="ed" style="margin-top:8px">
+        <div class="row">
+          <select data-qsel="${key}" aria-label="Your answer to ${q.id}">
+            <option value="">— your answer —</option><option value="agree">Agree with proposal</option>
+            <option value="different">Do it differently</option><option value="discuss">Let's discuss</option>
+          </select>
+        </div>
+        <textarea data-qtxt="${key}" placeholder="Optional note">${esc(FB[key]?.note || "")}</textarea>
+      </div></div>`;
+  }).join("");
+  QUESTIONS.forEach(q => { const s = document.querySelector(`[data-qsel="question.${q.id}"]`); s.value = FB["question." + q.id]?.status || ""; });
+}
+
+function paintTable(id) {
+  document.querySelectorAll(`#t-${CSS.escape(id)} tr[data-key]`).forEach(tr => {
+    tr.className = ""; const fb = FB[tr.dataset.key];
+    if (fb && (fb.status || fb.note)) tr.classList.add("has-fb", "fb-" + (fb.status || "question"));
+    const b = tr.querySelector("[data-edit]"); if (b) b.textContent = fb && (fb.status || fb.note) ? (STATUS[fb.status] || "Note") : "Comment";
+  });
+  const sum = []; const tn = FB["table." + id]; const add = FB["add." + id];
+  if (tn && tn.note) sum.push(`<div><b>Table note:</b> ${esc(tn.note)}</div>`);
+  if (add && add.note) sum.push(`<div><b>Proposed fields:</b> ${esc(add.note)}</div>`);
+  document.getElementById("fs-" + id).innerHTML = sum.join("");
+}
+
+function openFieldEditor(key, tr) {
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains("editor")) { next.remove(); return; }
+  document.querySelectorAll("tr.editor").forEach(e => e.remove());
+  const fb = FB[key] || {};
+  const ed = document.createElement("tr"); ed.className = "editor";
+  ed.innerHTML = `<td colspan="6"><div class="ed">
+    <div class="row"><b class="mono">${esc(key)}</b>
+      <select aria-label="Status">${Object.entries(STATUS).map(([v, l]) => `<option value="${v}" ${fb.status === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <span class="saved" aria-live="polite"></span></div>
+    <textarea placeholder="What should change? New name, type, allowed values, or why it is not needed.">${esc(fb.note || "")}</textarea>
+    <div class="row"><button class="btn small primary" data-act="save">Save</button><button class="btn small" data-act="clear">Clear</button><button class="btn small" data-act="close">Close</button></div>
+  </div></td>`;
+  tr.after(ed);
+  if (!fb.status) ed.querySelector("select").value = "change";
+  const id = key.split(".").slice(0, 2).join(".");
+  ed.addEventListener("click", e => {
+    const a = e.target.dataset.act; if (!a) return;
+    if (a === "save") { FB[key] = { status: ed.querySelector("select").value, note: ed.querySelector("textarea").value.trim(), at: new Date().toISOString() }; saveFB(); paintTable(id); ed.remove(); }
+    if (a === "clear") { delete FB[key]; saveFB(); paintTable(id); ed.remove(); }
+    if (a === "close") ed.remove();
+  });
+  ed.querySelector("textarea").focus();
+}
+
+function openTableNote(id, mode) {
+  const box = document.getElementById("tn-" + id);
+  const key = (mode === "add" ? "add." : "table.") + id;
+  if (box.classList.contains("open") && box.dataset.mode === mode) { box.classList.remove("open"); return; }
+  box.dataset.mode = mode; box.classList.add("open");
+  box.innerHTML = `<div class="ed">
+    <b>${mode === "add" ? "Propose new fields for" : "Comment on"} <span class="mono">${esc(id)}</span></b>
+    <textarea placeholder="${mode === "add" ? "One field per line, e.g. stool_consistency text — Bristol scale, needed for transit-time confounding" : "Anything about this table as a whole: split it, merge it, rename it, missing relationship…"}">${esc(FB[key]?.note || "")}</textarea>
+    <div class="row"><button class="btn small primary" data-a="save">Save</button><button class="btn small" data-a="clear">Clear</button><button class="btn small" data-a="close">Close</button></div></div>`;
+  box.onclick = e => {
+    const a = e.target.dataset.a; if (!a) return;
+    if (a === "save") { const v = box.querySelector("textarea").value.trim(); if (v) FB[key] = { note: v, at: new Date().toISOString() }; else delete FB[key]; saveFB(); }
+    if (a === "clear") { delete FB[key]; saveFB(); }
+    paintTable(id); box.classList.remove("open");
+  };
+  box.querySelector("textarea").focus();
+}
+
+function feedbackMarkdown() {
+  const lines = ["# Schema design feedback", "", `Draft: v0.2 · exported ${new Date().toISOString().slice(0, 16).replace("T", " ")}`, ""];
+  let n = 0;
+  SCHEMA.forEach(t => {
+    const id = fq(t); const items = [];
+    if (FB["table." + id]) items.push(`- **Table:** ${FB["table." + id].note}`);
+    if (FB["add." + id]) items.push(`- **Add fields:** ${FB["add." + id].note.replace(/\n/g, "\n  ")}`);
+    t.f.forEach(f => { const fb = FB[id + "." + f[0]]; if (fb && (fb.status || fb.note)) items.push(`- \`${f[0]}\` — **${STATUS[fb.status] || "Note"}**${fb.note ? ": " + fb.note.replace(/\n/g, "\n  ") : ""}`); });
+    if (items.length) { n += items.length; lines.push(`## ${id}`, ...items, ""); }
+  });
+  const qs = QUESTIONS.filter(q => FB["question." + q.id] && (FB["question." + q.id].status || FB["question." + q.id].note));
+  if (qs.length) {
+    lines.push("## Open design questions");
+    const lab = { agree: "Agree with proposal", different: "Do it differently", discuss: "Let's discuss" };
+    qs.forEach(q => { const fb = FB["question." + q.id]; n++; lines.push(`- **${q.id}** (${q.t}) — ${lab[fb.status] || "Note"}${fb.note ? ": " + fb.note : ""}`); });
+    lines.push("");
+  }
+  if (!n) lines.push("_No feedback yet. Use the Comment buttons next to tables and fields._");
+  return lines.join("\n");
+}
+function countFB() { return Object.values(FB).filter(v => v && (v.status || v.note)).length; }
+function updateCount() { document.getElementById("fbcount").textContent = countFB(); }
+
+/* filter */
+let layer = "";
+function applyFilter() {
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  let any = false;
+  document.querySelectorAll("article.tbl").forEach(a => {
+    const inLayer = !layer || a.dataset.layer === layer;
+    const tblHit = !q || a.dataset.text.includes(q);
+    let rowHit = false;
+    a.querySelectorAll("tr[data-key]").forEach(tr => {
+      const hit = !q || tblHit || tr.dataset.text.includes(q);
+      tr.classList.toggle("hidden", !hit); if (q && tr.dataset.text.includes(q)) rowHit = true;
+    });
+    const show = inLayer && (tblHit || rowHit);
+    a.classList.toggle("hidden", !show); if (show) any = true;
+  });
+  document.getElementById("nomatch").classList.toggle("hidden", any);
+}
+
+renderMap(); renderTables(); renderQuestions(); updateCount();
+
+document.getElementById("tablelist").addEventListener("click", e => {
+  const b = e.target.closest("[data-edit]"); if (b) { openFieldEditor(b.dataset.edit, b.closest("tr")); return; }
+  const t = e.target.closest("[data-tnote]"); if (t) openTableNote(t.dataset.tnote, t.dataset.mode);
+});
+document.getElementById("qlist").addEventListener("change", e => {
+  const k = e.target.dataset.qsel; if (!k) return;
+  FB[k] = { ...(FB[k] || {}), status: e.target.value }; if (!FB[k].status && !FB[k].note) delete FB[k]; saveFB();
+});
+document.getElementById("qlist").addEventListener("input", e => {
+  const k = e.target.dataset.qtxt; if (!k) return;
+  FB[k] = { ...(FB[k] || {}), note: e.target.value.trim() }; if (!FB[k].status && !FB[k].note) delete FB[k]; saveFB();
+});
+document.getElementById("layers").addEventListener("click", e => {
+  const c = e.target.closest(".chip"); if (!c) return;
+  layer = c.dataset.layer; document.querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", String(x === c))); applyFilter();
+});
+document.getElementById("q").addEventListener("input", applyFilter);
+
+const dlg = document.getElementById("fbdlg");
+document.getElementById("openfb").onclick = () => { document.getElementById("fbtext").textContent = feedbackMarkdown(); document.getElementById("fbfoot").textContent = "Paste this into the chat. Feedback is saved only in this browser."; dlg.showModal(); };
+document.getElementById("closefb").onclick = () => dlg.close();
+document.getElementById("copyfb").onclick = async () => {
+  const foot = document.getElementById("fbfoot");
+  try { await navigator.clipboard.writeText(feedbackMarkdown()); foot.textContent = "Copied. Paste it into the chat."; }
+  catch (e) { const r = document.createRange(); r.selectNodeContents(document.getElementById("fbtext")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); foot.textContent = "Text selected; press Cmd+C (or Ctrl+C) to copy."; }
+};
+document.getElementById("dlfb").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([feedbackMarkdown()], { type: "text/markdown" }));
+  a.download = "schema-feedback.md"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+document.getElementById("clearfb").onclick = () => {
+  if (!confirm("Delete all feedback saved in this browser?")) return;
+  FB = {}; saveFB(); renderTables(); renderQuestions(); applyFilter(); document.getElementById("fbtext").textContent = feedbackMarkdown();
+};
+</script>
+</body>
+</html>

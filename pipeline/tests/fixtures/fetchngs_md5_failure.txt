@@ -1,0 +1,16 @@
+[51/6e0238] NOTE: Process `NFCORE_FETCHNGS:FETCHNGS:SRA_FASTQ_FTP (SRX11704423_SRR15402225)` terminated with an error exit status (1) -- Execution is retried (1)
+[ac/5bee93] NOTE: Process `NFCORE_FETCHNGS:FETCHNGS:SRA_FASTQ_FTP (SRX11703076_SRR15400852)` terminated with an error exit status (1) -- Execution is retried (2)
+ERROR ~ Error executing process > 'NFCORE_FETCHNGS:FETCHNGS:SRA_FASTQ_FTP (SRX11703076_SRR15400852)'
+
+Caused by:
+  Process `NFCORE_FETCHNGS:FETCHNGS:SRA_FASTQ_FTP (SRX11703076_SRR15400852)` terminated with an error exit status (1)
+
+
+Command executed:
+
+  curl -4 --retry 5 --continue-at - --max-time 1200 ...
+  md5sum -c SRX11703076_SRR15400852_2.fastq.gz.md5
+
+Command error:
+  SRX11703076_SRR15400852_2.fastq.gz: FAILED
+  md5sum: WARNING: 1 computed checksum did NOT match

@@ -1,0 +1,58 @@
+# Python dependencies for agentic-16s, pinned in uv.lock. Not an installable package.
+#
+# pipeline/bin/ and infra/*.py use only the standard library: they run as `python3 -I` on the Mac's
+# system Python (3.9) and on the cloud VMs (Ubuntu 24.04: 3.12; Google Batch: Debian's python3).
+# Everything else runs through uv with one of the groups below:
+#   uv run --group db python db/migrate.py
+#   uv run --group ml python ml/loso.py
+#   uv run --group dashboard streamlit run dashboard/app.py
+#   scripts/check.sh                      # every automatic check; CI runs the same script
+[project]
+name = "agentic-16s"
+version = "0.1.0"
+description = "LLM-driven pipeline that turns published 16S rRNA microbiome studies into an analysis-ready database"
+readme = "proj.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "actionlint-py>=1.7",
+    "pytest>=8.3",
+    "ruff>=0.8",
+    "shellcheck-py>=0.10",
+]
+db = ["psycopg[binary]>=3.2"]
+ml = [
+    { include-group = "db" },
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+]
+dashboard = [
+    { include-group = "db" },
+    "altair>=5.4",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "streamlit>=1.40",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev"]
+# The Mac and Linux (cloud VMs, GitHub runners) only; keeps the lock file small.
+environments = ["sys_platform == 'darwin'", "sys_platform == 'linux'"]
+
+[tool.pytest.ini_options]
+testpaths = ["pipeline/tests", "ml/tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+extend-exclude = ["paper-discover2sra", "phase0", "studies/*/work", "studies/*/sources"]
+
+[tool.ruff.lint]
+# Start with the rules that find real bugs (syntax errors, undefined names, unused imports);
+# style rules can be added later without blocking CI.
+select = ["E4", "E7", "E9", "F"]
