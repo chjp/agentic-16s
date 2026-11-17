@@ -8,6 +8,9 @@ progress/
 # pipeline, so only studies/README.md and studies/LESSONS.md are committed
 studies/*/
 
+# Papers and supplements the owner supplies by hand (fetch_paper.py ingest moves them into studies/)
+inbox/
+
 # ML outputs (per-sample predictions) are rebuilt from the database
 ml/results/
 

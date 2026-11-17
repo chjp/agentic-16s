@@ -70,12 +70,12 @@ def protocol_for_tag(pmid: str, tag: str) -> dict:
 # ---------------------------------------------------------------- logging
 
 def log_event(pmid: str, action: str, outcome: str, detail: str, source: str = "", files=None,
-              step: str = "pipeline") -> None:
+              step: str = "pipeline", actor: str = ACTOR) -> None:
     """Append one line to studies/<PMID>/log.jsonl in the format of studies/README.md."""
     rec = {
         "ts": dt.datetime.now().isoformat(timespec="seconds"),
         "pmid": pmid,
-        "actor": ACTOR,
+        "actor": actor,
         "step": step,
         "action": action,
         "source": source,

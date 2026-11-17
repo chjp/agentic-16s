@@ -4,7 +4,7 @@
 
 Give it a disease name. It finds the papers, reads them, locates the per-sample labels, downloads the raw reads, runs one uniform bioinformatics workflow, and loads everything into PostgreSQL for machine learning and a dashboard.
 
-> **Status: design phase.** This document describes the planned architecture. Nothing below is implemented yet; the [roadmap](#roadmap) tracks what exists.
+> **Status: MVP in progress.** Five IBD studies run end to end (curated labels → ampliseq → PostgreSQL → classifier and dashboard); the LLM extraction layer is still a prototype. The [roadmap](#roadmap) tracks what exists.
 
 ## Why this project
 
@@ -174,14 +174,17 @@ erDiagram
 
 ## Roadmap
 
-- [ ] **Phase 0 — Choose the disease with data.** For several candidates (e.g. IBD, colorectal cancer, periodontitis, type 2 diabetes), count papers, the share with public reads, samples with recoverable case/control labels, and the spread of amplified regions. The disease with the most *usable* data becomes the target.
-- [ ] **Phase 1 — Schema.** PostgreSQL schema with the three layers and the activity log, migrations. Runs on a locally installed PostgreSQL.
-- [ ] **Phase 2 — Extraction prototype.** Pydantic schemas, prompts, and tools, run with Claude Code subagents. Build the gold set.
-- [ ] **Phase 3 — Bioinformatics.** Nextflow workflow from a database-generated samplesheet to loaded ASV tables.
-- [ ] **Phase 4 — Minimal loop.** One disease, 5–10 studies, from literature search through to the database.
-- [-] **Phase 5 — LangGraph.** Port the orchestration; add checkpoints, tracing, and the human review step. this is for future, not in mvp.
-- [ ] **Phase 6 — ML and dashboard.** Leave-one-study-out classifier; Streamlit pages for studies, cohorts, composition, and model results. Docker Compose to start the database and dashboard with one command.
-- [ ] **Phase 7 — Scale out.** More studies; start the cross-study heterogeneity analysis.
+Live task-level status is on the progress board, [`plan-progress.html`](plan-progress.html). Status below as of 2026-11-17.
+
+- [x] **Phase 0 — Choose the disease with data.** For several candidates (e.g. IBD, colorectal cancer, periodontitis, type 2 diabetes), count papers, the share with public reads, samples with recoverable case/control labels, and the spread of amplified regions. The disease with the most *usable* data becomes the target. **Done: inflammatory bowel disease (Crohn's + ulcerative colitis)**; runner-up periodontitis, with colorectal cancer about tied ([phase0/REPORT.md](phase0/REPORT.md)). Manual review of the label digests is still open.
+- [x] **Phase 1 — Schema.** PostgreSQL schema with the three layers and the activity log, migrations. Runs on a locally installed PostgreSQL. **Done:** core, activity-log, ASV/abundance/taxonomy tables, migrations and analysis views. The schema design document ([schema-design.html](schema-design.html), draft v0.2) awaits owner review.
+- [ ] **Phase 2 — Extraction prototype.** Pydantic schemas, prompts, and tools, run with Claude Code subagents. Build the gold set. **Partly done:** a reuse test of `paper-discover2sra` on 100 sampled IBD papers, summarized as a paper race in [`paper-discover2sra/runs/ibd100/race.html`](paper-discover2sra/runs/ibd100/race.html) (one runner per paper, each stopping at the first step it cannot pass). Funnel: 100 papers → 34 pass abstract screening → 22 with open-access full text → 7 with an archive accession → **5 finishers** with runs in NCBI SRA. A re-screen on 2026-11-17 with stool-only criteria (the MVP model uses stool) and a reason-first prompt cut abstract screening from 34 to 19 papers; the later stages have not been re-run on it yet. Papers without an open-access copy go through `pipeline/bin/fetch_paper.py` and, failing that, a human inbox (skill `.claude/skills/fetch-paper`). Run-level sample sheets were built for those 5 (one agent per paper). Still to do: Pydantic schemas, prompts, label-locating tools, count validator, evidence-quote check, gold set.
+- [x] **Phase 3 — Bioinformatics.** Nextflow workflow from a database-generated samplesheet to loaded ASV tables. **Done** for the five curated studies: preflight primer/orientation check, nf-core/ampliseq runs, QC gate, load into PostgreSQL, raw FASTQ cleanup, per-step resource profiles. Later: pipeline issue table with LLM triage.
+- [ ] **Phase 4 — Minimal loop.** One disease, 5–10 studies, from literature search through to the database. Not started as one automated loop; the five studies went through each stage separately. Human task queue still to build.
+- [-] **Phase 5 — LangGraph.** Port the orchestration; add checkpoints, tracing, and the human review step. Future work, not in the MVP.
+- [ ] **Phase 6 — ML and dashboard.** Leave-one-study-out classifier; Streamlit pages for studies, cohorts, composition, and model results. Docker Compose to start the database and dashboard with one command. **Mostly done:** classifier and Streamlit dashboard work; Docker Compose still to do.
+- [ ] **Phase 7 — Scale out.** More studies; start the cross-study heterogeneity analysis. **Cloud groundwork done:** Terraform GCP project with a spending kill switch, Google Batch runner (one job per study), full 89-run study processed on Batch. Still to do: more studies, region/batch-effect analysis.
+- [ ] **Phase 8 — Testing and CI/CD.** **Partly done:** private GitHub repo, pinned dependencies, `scripts/check.sh`, CI workflow (lint, config checks, unit tests, DB migrations). Still to do: offline regression fixtures, mini end-to-end run in CI, mock-community checks, agent extraction eval, CD with provenance.
 
 ### After the MVP
 
@@ -191,7 +194,7 @@ erDiagram
 ## Known limitations
 
 - **Cross-region comparability.** ASVs from different 16S regions (V1–V3, V3–V4, V4) are not directly comparable. The first version processes each study separately and merges at genus level. A systematic study of region and batch effects is planned once the database is large enough to support it; the schema already stores what that analysis needs.
-- **Automated fetching is open-access only.** Full text is fetched programmatically only from the PMC Open Access subset. Other papers enter the pipeline only when a person supplies a legally obtained copy. Paper text is never committed to this repository.
+- **Automated fetching is limited to legal free copies.** Full text is fetched programmatically from the PMC Open Access subset, or as a free PDF listed by Unpaywall or Europe PMC (one plain request, no bot-check workarounds; non-open-access PMC articles are never bulk-downloaded). Other papers become tasks in a local `inbox/` folder and enter the pipeline only when a person supplies a legally obtained copy. Paper text is never committed to this repository.
 - **Labels are sometimes unrecoverable.** Studies whose per-sample labels cannot be found or validated are recorded and excluded, not guessed.
 - **Disk space.** Raw FASTQ files are deleted after processing; the database keeps the accessions needed to fetch them again.
 
