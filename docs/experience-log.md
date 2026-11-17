@@ -48,6 +48,11 @@ Symptom · Cause · Cost · Fix · Scale-up note · Evidence
 | E14 | 2026-11-16 | compute | addSpecies chunks (15–17 GB each) run one at a time on 32 GB | ~5 h of one study; step now skipped |
 | E15 | 2026-11-16 | method | QC length check flags 1×101 reads as wrong-length | false `review` verdict |
 | E16 | 2026-11-16 | infra | whole-pipeline memory peak is undercounted under Docker | sizing must use per-task peaks |
+| E17 | 2026-11-16 | infra | the project's first Google Batch job failed in 8 s with no reason given | one resubmit, ~5 min |
+| E18 | 2026-11-16 | infra | Batch's Debian 12 image: `apt-cache show` finds openjdk-21, `apt-get` cannot install it | one probe job (10 s of VM) |
+| E19 | 2026-11-16 | infra | on Batch, `run_study.py` could not find `nextflow` that the shell had just run | one smoke job (2 min of VM) |
+| E20 | 2026-11-16 | infra | one dropped connection while pulling the DADA2 image stopped a whole Batch run (exit 125, no retry) | 38.5 min of VM, ~$0.18 |
+| E21 | 2026-11-16 | ops | with gcloud's CRC32C helper off, a 72 MB download was silently skipped | one failed collect |
 
 ---
 
@@ -313,6 +318,122 @@ memory and `gcp-migration.md` section 6, after the GCE batch had finished. They 
 - **Fix:** for sizing, use the per-task peaks. To get a whole-machine peak on a cloud VM, sample the
   machine's used memory (`free`) next to the run.
 - **Evidence:** `python3 -I pipeline/bin/resource_monitor.py report` (peak total vs per-step peak).
+- **Update 2026-11-16 (measured on Google Batch):** the per-task trace peak is not enough either.
+  The 35756051 6-run smoke on Batch (e2-standard-8, `vm_memory.tsv`, `free` every 10 s) shows the
+  whole VM at 26.9 GB of 32 GB used during DADA2_TAXONOMY. The climb from 2.4 GB starts when the
+  task starts, lasts about 70 s and falls back to 7 GB, then the task holds about 12 GB for 3 min.
+  The Nextflow trace gives that task `peak_rss` 9.6 GB. Nothing else was running: every other task
+  stayed under 2 GB and the VM never went above 6.5 GB before taxonomy. Likely cause, not
+  checked: a short peak while SILVA is loaded, which the trace's sampling misses. Consequence:
+  keep 32 GB for any study that assigns taxonomy with SILVA; do not drop to 16 GB (e2-standard-4)
+  on the strength of the 9.6 GB figure. Evidence:
+  `~/agentic16s-data/batch/runs/a16s-35756051-20261117-003156/output/vm_memory.tsv` and that run's
+  `execution_trace_*.txt`.
+
+### E17. The first Google Batch job failed with no reason given (2026-11-16, probe job)
+
+- **Symptom:** the probe job `a16s-probe-20261117-001625` went from QUEUED to FAILED 8 s after
+  submission. `runDuration` was 0 s, no VM was created, and the job's status events give no
+  reason.
+- **Cause:** Batch creates its service agent (`service-<project number>@gcp-sa-cloudbatch`) on
+  first use, not when the API is enabled. The audit log shows `service-agent-manager` adding
+  `roles/batch.serviceAgent` at 00:16:32 UTC; the job failed at 00:16:33, before the grant had
+  taken effect.
+- **Cost:** about 5 min to find the cause in the audit log, then one resubmit. No VM time.
+- **Fix:** resubmit a few minutes later. In a new project, enabling the API is not enough: submit a
+  small probe job first and expect the very first one to fail like this.
+- **Scale-up note:** Batch reports this failure as a bare state change, so check the audit log
+  (`logName:"cloudaudit"`, last few minutes) before anything else. The job VM's own logs only exist
+  once a VM has started.
+- **Evidence:** `~/agentic16s-data/batch/runs/a16s-probe-20261117-001625/` (submit.json,
+  job.json), Cloud Logging audit entries at 00:16:32–33 UTC on 2026-11-17.
+
+### E18. `apt-cache show` finds a Java package that cannot be installed (2026-11-16, probe job)
+
+- **Symptom:** the second probe job (`a16s-probe-20261117-001805`) stopped 10 s after starting:
+  `E: Package 'openjdk-21-jre-headless' has no installation candidate`.
+- **Cause:** Batch's `batch-debian` image is Debian 12 (bookworm), which ships Java 17 only. The
+  runner picked Java 21 when `apt-cache show openjdk-21-jre-headless` succeeded, and that command
+  also succeeds for a name that another package merely refers to. The GCE worker ran Ubuntu 24.04,
+  where Java 21 installs, so the problem never showed there.
+- **Cost:** one probe job, 10 s of an e2-standard-2 (well under $0.01).
+- **Fix:** ask `apt-cache policy` for a real candidate (`Candidate: <version>`) and fall back to
+  `openjdk-17-jre-headless`.
+- **Scale-up note:** the cloud image is a different OS from the VM that was tested: check every
+  package choice on it with a short probe job before running a study.
+- **Evidence:** `~/agentic16s-data/batch/runs/a16s-probe-20261117-001805/output/runner.log`.
+
+### E19. Python could not find `nextflow` on a Batch VM, the shell could (2026-11-16, 35756051 smoke)
+
+- **Symptom:** the first Batch smoke job (`a16s-35756051-20261117-002457`) passed preflight and
+  stopped at fetch, 2 min after starting: `FileNotFoundError: [Errno 2] No such file or directory:
+  'nextflow'` from `subprocess.Popen` in `run_study.py`. The probe job had run `nextflow -version`
+  from the same script without trouble.
+- **Cause (likely; the next job logs whether Batch exports PATH):** Batch starts the script
+  without an exported `PATH`. bash then uses its built-in default, which includes
+  `/usr/local/bin`, but does not export it. Python's `subprocess` falls back to `/bin:/usr/bin`,
+  which has `docker`, `java` and `python3` but not `/usr/local/bin/nextflow`. On the GCE worker
+  every run started from an SSH/tmux login shell with a full PATH.
+- **Cost:** one smoke job, 2 min of an e2-standard-8 (~$0.02). The collect step on the Mac also
+  crashed, because it tried to compare tables the failed job never wrote.
+- **Fix:** the runner exports a full `PATH` first thing and checks, from Python, that `nextflow`
+  can be found before starting the study. The probe now prints what Python sees
+  (`shutil.which`), not only what bash sees. `collect` compares only when the job produced tables,
+  and collecting the same job twice no longer duplicates log lines.
+- **Scale-up note:** a probe has to test tools the way the pipeline calls them (here, from a
+  Python subprocess). A check from the shell said everything was fine.
+- **Evidence:** `~/agentic16s-data/batch/runs/a16s-35756051-20261117-002457/output/runner.log`,
+  `studies/35756051/batch_runs.jsonl` (first line).
+
+### E20. One dropped image pull stopped a whole Batch run (2026-11-16, 35756051 full)
+
+- **Symptom:** the full 35756051 job (`a16s-35756051-20261117-005523`, 89 runs) failed 5.5 min
+  into ampliseq: `DADA2_FILTNTRIM (SRR15400632)` exit status 125, `docker: failed to copy: read
+  tcp ... read: connection reset by peer` while pulling
+  `community.wave.seqera.io/library/bioconductor-dada2_r-base_r-digest_tbb`.
+- **Cause:** every Batch job starts on a new VM with no images, so each run pulls every container
+  again. The GCE worker kept its images between studies and never hit this. Exit 125 means
+  `docker run` itself failed. nf-core retries only out-of-memory and similar exit codes, so one
+  network error ended the run.
+- **Cost:** 38.5 min of e2-standard-8 (~$0.18): fetch took 30 min (2.20 GB from ENA, about
+  1.2 MB/s, plus the known NCBI fallback for SRR15400852, E10), then 5.5 min of ampliseq. The work
+  dir went with the VM, so a rerun starts from the beginning (the known cost of one job per study).
+- **Fix (2026-11-16):** `pipeline/containers.txt` lists the 13 images from every Docker trace so far.
+  `infra/batch_runner.sh` pulls them in the background while fetch runs, retrying each failed pull
+  up to 5 times (waits 20, 40, 60, 80 s), and logs to `prepull.log`. It runs `run_study.py` in two
+  calls, `--to fetch` and then `--from ampliseq`, so ampliseq starts only once the pulls are done.
+  Both calls share the job's time limit. A pull error now costs a retry, not the run. Tested on the
+  Mac with a fake `docker` (a pull that fails once, then succeeds; one that always fails).
+  Verified on Batch (6-run smoke `a16s-35756051-20261117-020003`, 17.4 min): the very same error
+  (`connection reset by peer`, on `bash_coreutils`) came up once and the retry pulled it;
+  13 images in 167 s, done before fetch ended, so no extra wall time.
+- **Scale-up note:** short-lived cloud VMs pull every image on every job, so registry errors hit
+  them much more often than a long-lived worker. Pre-pull with retries, or mirror the images to
+  Artifact Registry in the same region.
+- **Evidence:** `~/agentic16s-data/batch/runs/a16s-35756051-20261117-005523/output/` (runner.log,
+  nf_logs.tgz, results.tgz → `ampliseq.stdout.log`), `studies/35756051/batch_runs.jsonl`.
+
+### E21. gcloud skipped a download once its CRC32C helper was off (2026-11-16, Mac)
+
+- **Symptom:** collecting the failed full job left `results.tgz_.gstmp` (72.6 MB) and printed
+  "no results.tgz from the job", although the object was in the bucket. Run by hand, gcloud said:
+  `This copy was skipped since fast hash calculation tools are not installed`.
+- **Cause:** the SDK's `gcloud-crc32c` helper (Homebrew install, ad-hoc signed, quarantined) is
+  blocked by macOS Gatekeeper. The owner saw its "Not Opened" dialog, and the first download
+  that needed it never finished. Turning the helper off (`storage/use_gcloud_crc32c=false`) left no
+  fast CRC32C on the Mac. gcloud downloads large objects in parallel slices, which can only be
+  checked with CRC32C, and with the default `check_hashes=if_fast_else_fail` it skips such copies.
+  `collect` ran the copy with errors ignored.
+- **Cost:** one collect with no results, about 15 min to trace; no data lost (the bucket keeps the
+  objects for 30 days).
+- **Fix:** `infra/gcloud16s` also turns off sliced downloads and composite uploads, so every
+  transfer is a whole object checked with MD5 (hash checks stay on). `collect` now prints gcloud's
+  error when a download is incomplete. A second `--collect` of the same job replaces its record
+  instead of appending another.
+- **Scale-up note:** do not turn off a safety check without testing the largest transfer it
+  covers: a small-file test passed here, and the 72 MB file failed.
+- **Evidence:** `infra/gcloud16s` (comment), the MD5 of the re-downloaded `results.tgz` matches
+  the bucket's.
 
 ---
 

@@ -13,4 +13,12 @@
 set -euo pipefail
 export CLOUDSDK_CONFIG="${AGENTIC16S_GCLOUD_CONFIG:-$HOME/.config/gcloud-agentic16s}"
 export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE="${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}"
+# The SDK's gcloud-crc32c helper (Homebrew install) is unsigned, so macOS Gatekeeper blocks it with a
+# "Not Opened" dialog (2026-11-16), and a download that needed it hung. Without the helper there is no
+# fast CRC32C on this Mac, and sliced (parallel) downloads and composite uploads can only be checked
+# with CRC32C: gcloud then SKIPS the copy (check_hashes=if_fast_else_fail; a 72 MB results.tgz was
+# skipped). So: no helper, and whole-object transfers, which are checked with MD5. Hash checks stay on.
+export CLOUDSDK_STORAGE_USE_GCLOUD_CRC32C=false
+export CLOUDSDK_STORAGE_SLICED_OBJECT_DOWNLOAD_THRESHOLD=0
+export CLOUDSDK_STORAGE_PARALLEL_COMPOSITE_UPLOAD_ENABLED=False
 exec gcloud "$@"

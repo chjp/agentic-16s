@@ -679,7 +679,7 @@ ssh agentic16s-worker 'tmux new-session -d -s run "cd ~/agentic-16s && NF_PROFIL
    - Python 3.12 暴露了 `resource_monitor` 的线程 bug（Mac 是 3.9）。
 
    原计划（保留作对照）：五个 study 换到 `e2-standard-8` 上依次跑（`terraform apply -var machine_type=e2-standard-8 -var worker_running=true`），结果同步回 Mac 加载进数据库。
-3. **阶段 3（Phase 7 扩容）**：改用 Nextflow 的 `google-batch` executor，`workDir = gs://...`，每个 process 一台 VM（用 credit 就选普通 VM，刷卡才选 Spot），Terraform 再加上 Batch 的 IAM。
+3. **阶段 3（Phase 7 扩容）**：（2026-11-16 改了做法：每个 study 一个 Batch job，不用 per-task executor，见第 8 节。）原计划是改用 Nextflow 的 `google-batch` executor，`workDir = gs://...`，每个 process 一台 VM（用 credit 就选普通 VM，刷卡才选 Spot），Terraform 再加上 Batch 的 IAM。
    这一步才真正发挥云的弹性，但调试成本也更高，等 study 数量上来以后再做。
 
 ## 7. 待你确认
@@ -688,3 +688,114 @@ ssh agentic16s-worker 'tmux new-session -d -s run "cd ~/agentic-16s && NF_PROFIL
 - 是否另外开 $300 的免费试用（需要绑卡；它的排除规则我没有核实）。
 - 数据库是否接受"留在 Mac、VM 只产出 tables"的方案。
 - `infra/` 放进公开 repo（`terraform.tfvars` 和 state 不放进去），可以展示 IaC 能力，推荐这么做。
+
+## 8. Google Batch：每个 study 一个 job（2026-11-16）
+
+### 8.1 为什么做
+
+- **作品集**：Google Batch 是托管的批处理服务。"提交 job、跑完自动删 VM"比"自己开一台 VM、跑完关机"更像真实的云上生信流程。
+- **不用管 VM**：没有常驻 VM，不需要开关机，也不需要空闲关机的 cron。每个 job 有最长运行时间，日志进 Cloud Logging。Batch 本身不另收费，只付 VM 的钱。
+- **不是为了更快**：机型还是 `e2-standard-8`，一个 study 的耗时应该和 GCE VM 差不多（8.6 节对比实测）。
+  以后 study 多了，可以在 12 vCPU 配额内同时跑 2–3 个 job，这才是省时间的地方。
+
+### 8.2 为什么是"每个 study 一个 job"，不是 Nextflow 的 per-task executor
+
+阶段 3 原来计划用 Nextflow 的 `google-batch` executor（每个 task 一台 VM、`workDir = gs://...`）。看了阶段 1/2 的记录后改了：
+
+| | 每个 study 一个 job（现在的做法） | 每个 task 一台 VM |
+|---|---|---|
+| VM 开机开销 | 每个 study 一次（1–2 分钟） | ampliseq 一次有 180–380 个 task，大多只跑几秒（FASTQC 4 s、FILTNTRIM 8 s），开机时间比计算时间还长 |
+| 配额（12 vCPU） | 一个 job 用 8 | 并行度同样被 12 卡住，弹性用不上 |
+| `run_study.py` 的检查 | 照常：integrity 检查、ENA→NCBI 逐 run 补下载（E10）、resource_monitor 都要本地文件 | work dir 在 GCS，这些都得改写 |
+| 已有经验 | 完全复用验证过的 Docker 路径，E9–E16 的修复都在 | 新路径，要重新踩坑 |
+| 代价 | job 中途失败时，Nextflow work dir 随 VM 一起删掉，整个 study 要从头跑（20–80 分钟） | 可以 `-resume` |
+
+最后一行的代价可以接受：job 本来就是按 study 切的，跑一次的成本是几毛钱。
+
+### 8.3 组成
+
+- `infra/batch.tf`：开启 Batch 和 Logging API；建 bucket `<project>-batch`（Standard，30 天后自动删除；Mac 上保留长期副本）；建 service account `agentic16s-batch`。
+  这个账号只有三类权限：向 Batch 汇报、写日志，以及对这个 bucket 的读和新建对象，覆盖和删除都做不了。
+  VM 用 worker 的 VPC 和临时外网 IP，不需要防火墙规则，也不需要 Cloud NAT（约 $30/月）。
+- `infra/batch_runner.sh`：job 里跑的脚本，以 root 身份在 Batch 的 Debian 镜像上运行。
+  装的工具和 `startup.sh` 一样（Docker、Java、Nextflow、sra-tools）；执行 `run_study.py <PMID> --from preflight --no-db`；最后把结果表、报告、日志和整机内存采样上传到 bucket，不上传 FASTQ。
+  `MODE=probe` 只检查环境，不跑 study。
+- `infra/batch_submit.py`：在 Mac 上一条命令完成全部流程：检查 → 准备输入 → 上传代码快照 → 提交 → 等待 → 取回结果 → 合并 `studies/<PMID>/` → 入库或对比。
+  每个 job 都记进 `studies/<PMID>/batch_runs.jsonl`，包括状态、分钟数和估算费用。
+- `pipeline/bin/compare_tables.py`：两次运行逐表对比，包括参数、每个 run 的 read 数、ASV 序列、abundance 的每个格子，以及每一级的分类标签。
+
+### 8.4 以前的教训落在哪里
+
+| 教训 | 设计里的对应 |
+|---|---|
+| E13：改了代码，已经在跑的进程不受影响 | 每个 job 带一份固定的代码快照（`code/<sha>.tgz`），之后的修改不会混进正在跑的 job |
+| E11：pooled 去噪跑了几个小时，事前没有估计 | 提交前打印这个 study 的 run 数、read 数，并列出已实测 study 的耗时 |
+| E9：Python 3.12 的 bug 在 Mac 的 3.9 上看不出来 | 探测 job 在 Batch 镜像自己的 Python 上跑全部单元测试 |
+| E16：Docker 下整条流程的内存峰值被少算 | runner 每 10 秒记一次整机内存（`vm_memory.tsv`） |
+| E12：给 nf-core 步骤写死内存会关掉重试 | `resources.config` 不变，还是由 `run_study.py` 按机型生成 |
+| 空闲关机靠 cron | 改用 `maxRunDuration` 加 runner 里的 `timeout`，到时间一定停 |
+| Spot 不能用 credit 付 | `provisioningModel: STANDARD`；机型只允许 e2 和 n2d |
+| 配额 12 vCPU，旧 VM 开着会占 8 | 提交前统计旧 VM 和正在跑的 job 占了多少 vCPU，超过配额就不提交 |
+| 两个 Google 账号，token 会被换掉 | 提交前用 tokeninfo 核对 token 的 email |
+| E17：项目第一次提交的 job 8 秒就失败 | 新项目先跑一个探测 job，第一次失败就隔几分钟重交 |
+| E18：Batch 镜像是 Debian 12，和 VM 的 Ubuntu 不同 | 装包前用 `apt-cache policy` 判断有没有可装的版本，Java 装不了 21 就用 17 |
+| E19：Batch 不导出 PATH，Python 找不到 `/usr/local/bin/nextflow` | runner 开头导出完整 PATH；探测和开跑前都从 Python 的角度检查工具 |
+| E20：每个 job 是新 VM，每次都要拉镜像，一次断线就让整个 study 失败 | fetch 期间在后台预拉 `pipeline/containers.txt` 里的 13 个镜像，失败重试 5 次；拉完才开始 ampliseq |
+| E21：关掉 Mac 上未签名的 `gcloud-crc32c` 后，大文件下载被跳过 | `infra/gcloud16s` 改成整个对象传输并用 MD5 校验；`collect` 会打印 gcloud 的报错 |
+
+### 8.5 探测结果（Batch 的 Debian 镜像，2026-11-16）
+
+`python3 -I infra/batch_submit.py --probe`，e2-standard-2，第三次成功（`a16s-probe-20261117-002105`）：
+
+| 项目 | Batch `batch-debian` | GCE worker（Ubuntu 24.04） |
+|---|---|---|
+| 系统 | Debian 12 (bookworm)，内核 6.1 | Ubuntu 24.04 |
+| 自带 | gcloud 592.0.0、Docker 29.9.3、Python 3.11.2、curl | 无 Docker，要装 |
+| Java | 只有 17（17.0.21）；Nextflow 26.10.6 在 17 上正常 | 21 |
+| sra-tools | 3.0.3（Debian 包） | 3.0.3 |
+| 网络（临时外网 IP） | ENA、NCBI SDL、GitHub 都是 200，能从 quay.io 拉镜像 | 同 |
+| 单元测试 | 49 个在 Python 3.11 上全部通过 | — |
+
+时间：提交 → RUNNING 约 1 分钟（QUEUED → SCHEDULED → RUNNING）；装工具 58 秒；整个探测在 VM 上跑了 106 秒，估算费用 $0.004。
+
+前两次失败（都没花钱）：
+1. E17：项目第一次提交的 job 8 秒就失败，因为 Batch 的 service agent 要到第一次提交时才创建。过几分钟重交即可。
+2. E18：Debian 12 装不了 openjdk-21，但 `apt-cache show` 照样返回成功。现在改用 `apt-cache policy` 判断，装不了就用 17。
+
+### 8.6 实测
+
+**冒烟测试：35756051 的 6 个 run（2026-11-16，`a16s-35756051-20261117-003156`，e2-standard-8）**
+
+- 第二次成功。第一次因为 Batch 不导出 PATH（E19），在 fetch 停住。
+- 时间：提交 → RUNNING 约 1 分钟；VM 上 19.8 分钟（装工具约 1 分钟、preflight 1 分钟、fetch、ampliseq 约 15 分钟，含拉镜像和下载 SILVA）；估算 $0.10。
+  GCE VM 上同样 6 个 run：fetch 2 分钟 + ampliseq 20 分钟，VM 开机到关机约 30 分钟。
+- 和参照（Mac/GCE 那两次，pooled 去噪）对比：参数只差 `sample_inference`（pooled → pseudo）和 `skip_dada_addspecies`，都是 11-15/16 定下的固定参数。
+  6 个 run 的 `reads_input`、`reads_after_trim`、`reads_filtered` 全部相同；`reads_denoised` 及之后的步骤不同（pseudo 的预期结果）。
+  ASV 309 个（参照 389 个），non-chimeric read 总数 217,766（参照 218,651）。257 个共同 ASV 里，genus 和 species 标签各只有 1 个不同。
+  QC 判定三次相同：`review`，理由也相同（SRR15400843 质量过滤后只剩 3%）。
+- 内存：整机 `free` 采样显示，DADA2_TAXONOMY 开始后的约 70 秒冲到 26.9 / 32 GB，trace 只记了 9.6 GB（E16 的补充）。所以有 SILVA 分类的 study 至少要 32 GB。
+- 结论：流程本身没问题。结果要和参照完全一致，得用同样的参数，见下面的全量对比。
+
+**加了预拉之后再跑一次冒烟（`a16s-35756051-20261117-020003`）**
+
+- VM 上 17.4 分钟，估算 $0.09。13 个镜像 167 秒拉完，比 fetch 结束得早，所以没有增加总时间。
+- 这次又遇到一次和 E20 一样的 `connection reset by peer`（`bash_coreutils` 镜像），预拉重试一次就成功了。没有预拉的话，这个 study 会失败。
+- **两次 Batch 冒烟互相对比**（参数和代码路径相同）：6 个 run 的所有 read 数、309 个 ASV、518 个 abundance 格子、所有 genus 标签全部相同；只有 1 个 species 标签不同。genus 层面可复现。
+
+**第一次全量（`a16s-35756051-20261117-005523`）失败**：fetch 用了 30 分钟（ENA 下载 2.2 GB，约 1.2 MB/s；SRR15400852 照旧从 NCBI 补下载），ampliseq 开始 5.5 分钟后拉镜像断线，docker exit 125（E20）。花了 38.5 分钟，约 $0.18。
+
+**全量重跑（`a16s-35756051-20261117-022001`，89 个 run，e2-standard-8）成功**
+
+- 时间（实测）：提交 → RUNNING 约 2 分钟；VM 上共 102.2 分钟，估算 $0.47（按标准价，STANDARD 预配）。
+  其中：装工具 + preflight 2 分钟，fetch 28 分钟（2.2 GB），ampliseq 71.6 分钟（02:51:37 → 04:03:10）。
+  预拉：13 个镜像 158 秒拉完，0 个失败，在 fetch 期间完成，没有增加总时间。
+- **和 GCE VM 那次（11-16，同样 pseudo 去噪）对比：参数只差 `skip_dada_addspecies`。**
+  89 个 run 的所有 read 数相同；1877 个 ASV 相同；6868 行 abundance、2,013,868 条 read 逐格相同；
+  domain 到 species 所有分类标签 0 处不同。QC 判定相同（`review`，质量过滤中位保留率 38% < 60%）。
+  结果在 `studies/35756051/batch_compare.json`、`pipeline_qc_batch.json`，job 记录在 `batch_runs.jsonl`。
+- ampliseq 耗时：GCE 73 分钟（含 addSpecies 13.4 分钟 CPU 时间、约 9 分钟墙钟），Batch 71.6 分钟（不含 addSpecies）。
+  所以同样的步骤 Batch 慢了约 10–15%：按 trace 的 realtime 合计，DADA2_FILTNTRIM 32.9 → 35.4 分钟，
+  DADA2_DENOISING 16.0 → 19.6，DADA2_QUALITY1 14.7 → 18.1，DADA2_TAXONOMY 9.7 → 12.2；FASTQC 反而快一点（14.1 → 13.2）。
+  每边只跑了一次，原因没有确认。可能是 e2 机型每次分到的 CPU 平台不同，也可能是 Debian 12 和 Ubuntu 24.04 的差别。要下结论，需要固定 CPU 平台（换 n2/c3）再跑一次。
+- 内存（实测，整机 `free` 每 10 秒采样）：峰值 26.5 / 32 GB，04:01:53，在 DADA2_TAXONOMY 期间。和冒烟测试一致，32 GB 是下限。
+- 结论：Batch 一个 job 跑完一个完整 study，结果和 GCE VM 完全相同，不需要人管 VM 的开关机。

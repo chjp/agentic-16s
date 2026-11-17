@@ -104,6 +104,8 @@ def test_merge_studies_only_takes_what_the_job_changed(tmp_path, monkeypatch):
     assert (local / "pipeline_qc_batch.json").read_text() == '{"new": true}\n'
     assert not (local / "pipeline_qc_subset6_batch.json").exists()
     assert len((local / "log.jsonl").read_text().splitlines()) == 2
+    bs.merge_studies(st, vm, local, "batch:j", before)  # collecting the same job again adds nothing
+    assert len((local / "log.jsonl").read_text().splitlines()) == 2
 
 
 def write_run(d: Path, counts: dict, genus: dict, params: dict):

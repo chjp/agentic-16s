@@ -338,7 +338,9 @@ def collect(run_id: str) -> int:
     times = status_times(job)
     out = sd / "output"
     out.mkdir(exist_ok=True)
-    gcloud("storage", "cp", "--quiet", f"{st['out_uri']}/*", str(out), check=False)
+    p = subprocess.run([GCLOUD, "storage", "cp", "--quiet", f"{st['out_uri']}/*", str(out)], capture_output=True, text=True)
+    if p.returncode != 0:  # e.g. a copy skipped for want of a fast CRC32C (see infra/gcloud16s)
+        print(f"warning: download from {st['out_uri']} incomplete (exit {p.returncode}):\n{p.stderr.strip()[-800:]}")
     if not (out / "runner.log").exists():  # the VM died before uploading: take the log from Cloud Logging
         flt = f'logName="projects/{job["name"].split("/")[1]}/logs/batch_task_logs" AND labels.job_uid="{job["uid"]}"'
         text = gcloud("logging", "read", flt, "--order=asc", "--limit=5000", "--format=value(textPayload)", check=False)
@@ -375,7 +377,9 @@ def collect(run_id: str) -> int:
             dest = (common.data_dir() / "batch" / pmid / tag) if st["compare"] else common.protocol_dir(pmid, tag)
             shutil.copytree(src, dest, dirs_exist_ok=True)
             record.setdefault("results", {})[tag] = str(dest)
-            if st["compare"]:
+            if st["compare"] and not (dest / "tables" / "run_qc.tsv").exists():
+                print(f"compare {tag}: skipped, the job produced no tables")
+            elif st["compare"]:
                 cmp = compare_tables.compare(Path(st["compare"]), dest)
                 name = "batch_compare.json" if "_subset" not in tag else f"batch_compare_{tag.split('_', 1)[1]}.json"
                 common.write_json(REPO / "studies" / pmid / name, {"run_id": run_id, **cmp})
@@ -386,11 +390,16 @@ def collect(run_id: str) -> int:
     else:
         print(f"no results.tgz from the job; logs in {out}")
         rc = 1
-    common.log_event(pmid, "run study on Google Batch", "success" if rc == 0 else "failure",
-                     f"{run_id}: {times['state']}, exit {record['exit_code']}, {record['run_min']} min on {st['machine']}, "
-                     f"~${record['est_cost_usd']} (estimate); staging {sd}")
-    with open(REPO / "studies" / pmid / "batch_runs.jsonl", "a") as fh:
-        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    # A second --collect of the same job replaces its record and logs again only if the outcome changed.
+    runs_file = REPO / "studies" / pmid / "batch_runs.jsonl"
+    old = [json.loads(x) for x in runs_file.read_text().splitlines() if x.strip()] if runs_file.exists() else []
+    prev = next((r for r in old if r.get("run_id") == run_id), None)
+    if prev is None or (prev.get("state"), "results" in prev) != (record.get("state"), "results" in record):
+        common.log_event(pmid, "run study on Google Batch", "success" if rc == 0 else "failure",
+                         f"{run_id}: {times['state']}, exit {record['exit_code']}, {record['run_min']} min on {st['machine']}, "
+                         f"~${record['est_cost_usd']} (estimate); staging {sd}")
+    runs_file.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n"
+                                 for r in [r for r in old if r.get("run_id") != run_id] + [record]))
     common.write_json(sd / "record.json", record)
     if rc == 0 and not st["compare"] and not st["subset"]:
         print("loading into PostgreSQL on the Mac: run_study.py --from load")
@@ -417,10 +426,12 @@ def merge_studies(st: dict, vm_dir: Path, local_dir: Path, host: str, before: di
         return
     vm_log = vm_dir / "log.jsonl"
     if vm_log.exists():
-        lines = new_log_lines(st["snapshot_log_lines"], vm_log.read_text(), host)
-        with open(local_dir / "log.jsonl", "a") as fh:
+        local_log = local_dir / "log.jsonl"
+        have = set(local_log.read_text().splitlines()) if local_log.exists() else set()
+        lines = [x for x in new_log_lines(st["snapshot_log_lines"], vm_log.read_text(), host) if x not in have]
+        with open(local_log, "a") as fh:  # a second --collect of the same job adds nothing
             fh.writelines(line + "\n" for line in lines)
-        print(f"log.jsonl: {len(lines)} lines from the job")
+        print(f"log.jsonl: {len(lines)} new lines from the job")
     vm_prof = vm_dir / "resource_profile.json"
     if vm_prof.exists():
         lp = local_dir / "resource_profile.json"
