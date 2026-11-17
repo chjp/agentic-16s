@@ -124,6 +124,7 @@ else
 fi
 run "pipeline tests on Python $PY_MAC" uv_mac pytest -q pipeline/tests
 run "pipeline tests on Python $PY_VM" uv_vm pytest -q pipeline/tests
+run "database loader tests on Python $PY_VM" uv_vm --group db pytest -q db/tests
 if [[ $FAST == 1 ]]; then
   skip "ML tests" "--fast"
 else

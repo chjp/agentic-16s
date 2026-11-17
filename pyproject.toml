@@ -44,7 +44,7 @@ default-groups = ["dev"]
 environments = ["sys_platform == 'darwin'", "sys_platform == 'linux'"]
 
 [tool.pytest.ini_options]
-testpaths = ["pipeline/tests", "ml/tests"]
+testpaths = ["pipeline/tests", "db/tests", "ml/tests"]
 addopts = "-ra"
 
 [tool.ruff]

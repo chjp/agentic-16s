@@ -8,8 +8,9 @@ Usage:
   uv run --with 'psycopg[binary]' python db/load_study.py studies/35756051 [studies/... ...]
 
 Reads from the study folder: sample_sheet.tsv, sra_runs.tsv, validation.json, log.jsonl,
-sources/fulltext.xml, sources/supplements/*, sources/haiku_extraction.json; plus paper
-metadata from paper-discover2sra/runs/ibd100/papers.tsv.
+sources/fulltext.xml or sources/paper.pdf, sources/supplements/*, sources/haiku_extraction.json,
+fetch_result.json (how the full text was obtained, from pipeline/bin/fetch_paper.py); plus paper
+metadata from the first paper-discover2sra/runs/*/papers.tsv that lists the PMID.
 
 Curator knowledge that is not in the files (which control groups are relatives, how
 subject ids were derived, open questions for people) sits in STUDY_NOTES below, one
@@ -30,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from migrate import database_url  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-PAPERS_TSV = ROOT / "paper-discover2sra/runs/ibd100/papers.tsv"
+RUNS_DIR = ROOT / "paper-discover2sra/runs"
 LOADER = "script:db/load_study.py"
 
 STUDY_NOTES = {
@@ -168,6 +169,56 @@ def source_type(src):
     return "derived"
 
 
+def paper_meta(pmid, runs_dir=RUNS_DIR):
+    """The papers.tsv row for this PMID from the first discovery run (sorted by name) that has it."""
+    for tsv in sorted(Path(runs_dir).glob("*/papers.tsv")):
+        with open(tsv, encoding="utf-8") as f:
+            row = next((r for r in csv.DictReader(f, delimiter="\t") if r["pmid"] == pmid), None)
+        if row:
+            return row
+    return {}
+
+
+PDF_ORIGIN = {"publisher": "publisher", "repository": "data_repository", "europepmc": "europepmc"}
+
+
+def fulltext_sources(folder):
+    """How the study's full text was obtained, without touching the database.
+
+    Returns (fulltext_status for core.paper, documents), where documents is a list of
+    (relative path, kind, origin, obtained_by) for the files that exist. fetch_result.json is
+    written by pipeline/bin/fetch_paper.py; studies curated before it existed have only
+    sources/fulltext.xml from the PMC open-access subset.
+    """
+    folder = Path(folder)
+    fr_path = folder / "fetch_result.json"
+    fr = json.loads(fr_path.read_text(encoding="utf-8")) if fr_path.exists() else {}
+    human = {h.get("dest") for h in fr.get("human_files") or []}
+    has_xml = (folder / "sources/fulltext.xml").exists()
+    has_pdf = (folder / "sources/paper.pdf").exists()
+    status = {"fetched": "fetched_oa", "fetched_by_human": "human_supplied", "needs_human": "not_oa",
+              "wont_do": "unavailable"}.get(fr.get("status"))
+    if status is None:
+        status = "fetched_oa" if has_xml else "not_tried"
+
+    docs = []
+    if has_xml:
+        docs.append(("sources/fulltext.xml", "fulltext_xml", "pmc", "agent"))
+    if has_pdf:
+        if "sources/paper.pdf" in human or fr.get("status") == "fetched_by_human":
+            docs.append(("sources/paper.pdf", "fulltext_pdf", "human_upload", "human"))
+        else:
+            route = (fr.get("route") or "").split(":")[-1].lower()
+            docs.append(("sources/paper.pdf", "fulltext_pdf", PDF_ORIGIN.get(route, "publisher"), "script"))
+    supp = folder / "sources/supplements"
+    for f in sorted(supp.glob("*")) if supp.exists() else []:
+        if f.is_file():
+            rel = str(f.relative_to(folder))
+            docs.append((rel, "supplement", "human_upload", "human") if rel in human
+                        else (rel, "supplement", "europepmc", "agent"))
+    return status, docs
+
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -210,15 +261,16 @@ class Loader:
 
     # ------------------------------------------------------------ paper, study
     def paper_and_study(self):
-        meta = next((r for r in csv.DictReader(open(PAPERS_TSV, encoding="utf-8"), delimiter="\t")
-                     if r["pmid"] == self.pmid), {})
+        meta = paper_meta(self.pmid)
+        self.fulltext_status, self.fulltext_docs = fulltext_sources(self.dir)
         self.paper_id = self.one("""
             insert into core.paper (pmid, pmcid, doi, title, journal, pub_year, is_open_access, abstract, fulltext_status)
-            values (%s,%s,%s,%s,%s,%s,%s,%s,'fetched_oa')
-            on conflict (pmid) do update set title = excluded.title returning paper_id""",
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            on conflict (pmid) do update set title = excluded.title, fulltext_status = excluded.fulltext_status
+            returning paper_id""",
             (self.pmid, meta.get("pmc_id") or None, (meta.get("doi") or "").lower() or None,
              meta.get("title") or f"PMID {self.pmid}", meta.get("journal"), num(meta.get("pub_date")),
-             meta.get("is_open_access") == "Y", meta.get("abstract")))
+             meta.get("is_open_access") == "Y", meta.get("abstract"), self.fulltext_status))
         v = self.validation
         year = meta.get("pub_date") or "na"
         self.study_key = f"ibd-{year}-{self.pmid}"
@@ -253,25 +305,22 @@ class Loader:
                                (self.study_id, LOADER, Jsonb({"folder": str(self.dir)})))
 
     # ------------------------------------------------------------ documents
-    def add_document(self, path, kind, origin, url=None):
+    def add_document(self, path, kind, origin, url=None, obtained_by="agent"):
         p = self.dir / path if not Path(path).is_absolute() else Path(path)
         if not p.exists():
             return None
         doc = self.one("""insert into core.document (paper_id, study_id, kind, original_name, source_url, origin, obtained_by,
                             storage_path, sha256, bytes, mime_type, log_id)
-                          values (%s,%s,%s,%s,%s,%s,'agent',%s,%s,%s,%s,%s)
+                          values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                           on conflict (sha256) do update set study_id = excluded.study_id returning document_id""",
-                       (self.paper_id, self.study_id, kind, p.name, url, origin, str(p.relative_to(ROOT)), sha256(p),
+                       (self.paper_id, self.study_id, kind, p.name, url, origin, obtained_by, str(p.relative_to(ROOT)), sha256(p),
                         p.stat().st_size, mimetypes.guess_type(p.name)[0], self.log_id))
         self.counts["document"] += 1
         return doc
 
     def documents(self):
-        self.add_document("sources/fulltext.xml", "fulltext_xml", "pmc")
-        supp = self.dir / "sources/supplements"
-        for f in sorted(supp.glob("*")) if supp.exists() else []:
-            if f.is_file():
-                self.add_document(f, "supplement", "europepmc")
+        for path, kind, origin, obtained_by in self.fulltext_docs:
+            self.add_document(path, kind, origin, obtained_by=obtained_by)
         self.external_doc = None
         for path, url, origin in self.notes.get("external_files", []):
             self.external_doc = self.add_document(path, "external_metadata", origin, url)
