@@ -114,6 +114,28 @@ def load_runs(pmid: str) -> list[dict]:
     return runs
 
 
+MATE_FILE = re.compile(r"_[12]\.fastq\.gz$")
+
+
+def resolve_layout(run: dict, protocol: dict) -> tuple[str, str]:
+    """The layout to process a run with, and why it differs from ENA's, if it does.
+
+    ENA's library_layout is what the submitter typed. Some studies (36111238) declare SINGLE
+    while ENA serves an R1/R2 pair (`_1`/`_2` files): followed blindly, the run would be processed
+    from R1 alone. When the protocol (from the paper) says PAIRED and ENA serves exactly one mate
+    pair, the run is processed as PAIRED and the manifest says so. Without the protocol's
+    support it is a mismatch for a person to look at, never a silent guess.
+    """
+    ena = (run.get("library_layout") or "").upper()
+    urls = [u for u in run.get("fastq_ftp", "").split(";") if u]
+    mates = [u for u in urls if MATE_FILE.search(u)]
+    if ena == "SINGLE" and len(mates) == 2:
+        if (protocol.get("layout") or "").upper() == "PAIRED":
+            return "PAIRED", "layout corrected: ENA says SINGLE but serves _1/_2 mate files; protocol.json says PAIRED"
+        return ena, "ENA says SINGLE but serves _1/_2 mate files; protocol.json does not say PAIRED"
+    return ena, ""
+
+
 def pick_files(run: dict) -> list[str]:
     """The R1/R2 (or single) FASTQ URLs. ENA sometimes adds an orphan-reads file for PAIRED runs."""
     urls = [u for u in run["fastq_ftp"].split(";") if u]
@@ -149,22 +171,31 @@ def balanced_subset(runs: list[dict], n: int) -> list[dict]:
 
 MANIFEST_FIELDS = ["run_accession", "protocol", "group", "sample_type", "library_strategy", "library_layout",
                    "instrument_platform", "instrument_model", "read_count", "n_files", "fastq_urls",
-                   "fastq_md5", "fastq_bytes", "status", "status_reason"]
+                   "fastq_md5", "fastq_bytes", "status", "status_reason", "library_layout_archive"]
 
 
 def prepare(pmid: str, subset: int | None = None) -> dict[str, Path]:
     protocols = common.load_protocols(pmid)
+    by_protocol = {p["label"]: p for p in protocols}
     runs = load_runs(pmid)
     by_label: dict[str, list[dict]] = defaultdict(list)
     unassigned = 0
+    corrected: dict[str, int] = defaultdict(int)
     for r in runs:
         label = assign_protocol(r, protocols)
         if label is None:
             unassigned += 1
             continue
+        layout, layout_note = resolve_layout(r, by_protocol[label])
+        r["library_layout_archive"] = r["library_layout"]
+        r["library_layout"] = layout
+        if layout != r["library_layout_archive"]:
+            corrected[label] += 1
         files = pick_files(r)
-        r.update(protocol=label, n_files=len(files), fastq_urls=";".join(files), status="ok", status_reason="")
-        if not files:
+        r.update(protocol=label, n_files=len(files), fastq_urls=";".join(files), status="ok", status_reason=layout_note)
+        if layout_note and layout == r["library_layout_archive"]:
+            r.update(status="layout_mismatch", status_reason=layout_note)
+        elif not files:
             r.update(status="no_fastq", status_reason="ENA lists no FASTQ for this run")
         elif r["library_layout"] == "PAIRED" and len(files) != 2:
             r.update(status="layout_mismatch", status_reason=f"PAIRED but {len(files)} FASTQ files")
@@ -184,7 +215,9 @@ def prepare(pmid: str, subset: int | None = None) -> dict[str, Path]:
         common.log_event(
             pmid, "build run manifest", "success" if not bad else "partial",
             f"{tag}: {len(ok)} runs to fetch ({gb:.2f} GB){' (subset)' if subset else ''}; "
-            f"{len(bad)} without usable FASTQ; {unassigned} 16S runs matched no protocol",
+            f"{len(bad)} without usable FASTQ; {unassigned} 16S runs matched no protocol"
+            + (f"; {corrected[label]} run(s) declared SINGLE in ENA processed as PAIRED (ENA serves _1/_2 mate "
+               f"files and protocol.json says PAIRED)" if corrected[label] else ""),
             source="studies/<PMID>/sample_sheet.tsv + ENA filereport", files=[d / "manifest.tsv"])
         out[tag] = d
     return out
