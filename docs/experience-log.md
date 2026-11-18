@@ -474,6 +474,9 @@ memory and `gcp-migration.md` section 6, after the GCE batch had finished. They 
 - **Evidence:** `~/agentic16s-data/batch/runs/a16s-37696680-20261117-222450/output/runner.log`,
   `.../a16s-36111238-20261117-221219/extracted/data/pipeline/36111238/main/fetchngs.stdout.log`,
   NCBI SDL for SRR23492472 (normalized .sra and the submitted R1/R2 FASTQ are both listed).
+- **After the fix (measured, 2026-11-18):** the 37696680 smoke (`a16s-37696680-20261118-050425`,
+  26.6 VM min, ~$0.13) passed QC: 6/6 runs from NCBI's normalized copy as R1/R2, primers at the start
+  of 99.6 % of R1 and 98.7 % of R2, merge rate 94.7 %, median 50,481 non-chimeric reads.
 
 ### E23. A 1-bp shorter sequencing batch lost 98 % of its reads to truncation (2026-11-17, 36111238)
 
@@ -504,6 +507,13 @@ memory and `gcp-migration.md` section 6, after the GCE batch had finished. They 
   not the median run. The QC gate's per-run retention check is what caught it.
 - **Evidence:** `studies/36111238/pipeline_qc.json`, `~/agentic16s-data/pipeline/36111238/main/tables/run_qc.tsv`,
   `studies/36111238/sample_sheet.tsv` (`other_json.read_length_per_mate`).
+- **Rerun (measured, 2026-11-18):** `a16s-36111238-20261118-034142`, 81.0 VM min, ~$0.37, with
+  `trunclenf 271 / trunclenr 257`. The 14 runs of 2x300 kept a median 65.2 % of their reads in
+  filtering, the same as the 46 runs of 2x301 (65.2 %; before the fix 2.2 % against 60-66 %).
+  Median non-chimeric reads per run: 41,863 (2x300) and 46,814 (2x301). QC verdict `review` only
+  for one run, SRR20914791 (17 %, a 2x301 run). Loaded as pipeline_run 10 (60 runs, 2,548 ASVs).
+  Within each batch UC still has more Faecalibacterium than the controls (2x301: 10.7 % vs 6.6 %;
+  2x300: 9.9 % vs 7.9 %), so that difference is not a batch artifact.
 
 ---
 
@@ -518,6 +528,9 @@ memory and `gcp-migration.md` section 6, after the GCE batch had finished. They 
 | 35756051 (GCE) | 89 | MiSeq 2×301, pseudo | 2.19 GB FASTQ | whole ampliseq | 1 h 13 min, 380 tasks; denoising 16 min; TAXONOMY 9.6 GB; addSpecies 9 min |
 | 28174747 (GCE) | 90 | HiSeq 1×101, pseudo | 2.43 GB FASTQ | denoising | 76 min (one task), from the failed run (E13) |
 | 37661264 (GCE) | 97 | MiSeq 2×250, pooled | | denoising; addSpecies | ~1 h 45 min per read direction (E11); addSpecies 5.7 task-hours (E14) |
+| 42349924 (Batch) | 69 | MiSeq 2×301, pseudo | 1.77 GB FASTQ | whole job | 114.6 min, ~$0.52; denoising tasks up to 11 min; TAXONOMY 9.7 GB |
+| 36111238 (Batch, rerun) | 60 | MiSeq 2×301 + 2×300, pseudo | 5.5 M read pairs | whole job | 81.0 min, ~$0.37 (fetch 21 min incl. image pull); denoising 23 min; TAXONOMY 9.7 GB |
+| 37696680 (Batch) | 53 | MiSeq ~2×250 (trimmed), pseudo | 4.8 M read pairs from NCBI .sra | whole job | 100.0 min, ~$0.46; denoising 22 min; TAXONOMY 9.7 GB |
 
 GCE rows: e2-standard-8 (8 vCPU, 32 GB), Docker profile, 2026-11-15/16. Whole-pipeline peaks
 under Docker are not valid (E16); per-step peaks come from the Nextflow trace. Without addSpecies,
