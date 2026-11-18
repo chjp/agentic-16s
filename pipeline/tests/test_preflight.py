@@ -149,3 +149,51 @@ def test_decide_paired_without_r2_observations_needs_review():
     """A paired protocol whose observations lack R2 (e.g. a single dumped file) goes to review, no crash."""
     r = preflight.decide(PE, [_obs(pct_fwd_at_r1_start=99, pct_rev_at_r1_start=0)], [])
     assert r["decision"] == "needs_review" and "R2" in r["review_reasons"][0]
+
+
+def test_catalog_matches_a_primer_printed_one_base_short():
+    """36111238 prints 338F without its last base; the amplicon length must still be known."""
+    assert common.catalog_by_seq("ACTCCTACGGGAGGCAGCA")["name"] == "338F"
+    assert common.expected_amplicon_length("ACTCCTACGGGAGGCAGCA", "GGACTACHVGGGTWTCTAAT") == 429
+    assert common.catalog_by_seq("ACTCCTACGGGAGG") is None  # far shorter: no guess
+
+
+def test_run_read_lengths_keep_only_fixed_length_runs():
+    m = [{"run_accession": "A", "status": "ok", "read_count": "100", "base_count": "60200"},   # 2 x 301
+         {"run_accession": "B", "status": "ok", "read_count": "100", "base_count": "60000"},   # 2 x 300
+         {"run_accession": "C", "status": "ok", "read_count": "100", "base_count": "59731"},   # trimmed
+         {"run_accession": "D", "status": "no_fastq", "read_count": "100", "base_count": "60200"}]
+    assert preflight.run_read_lengths(m, paired=True) == {"A": 301, "B": 300}
+
+
+def test_shortest_batch_ignores_a_lone_short_run():
+    lengths = {f"r{i}": 301 for i in range(40)} | {"odd": 250}
+    assert preflight.shortest_batch(lengths)["length"] == 301
+    lengths |= {f"s{i}": 300 for i in range(14)}
+    b = preflight.shortest_batch(lengths)
+    assert b["length"] == 300 and b["n_runs"] == 14
+
+
+def test_truncation_capped_when_a_batch_has_shorter_reads():
+    """36111238: 14 of 60 runs are 2x300 among 2x301; ampliseq's 274 dropped 98 % of their reads."""
+    q = _quals(50, 301)
+    batch = {"length": 300, "n_runs": 14, "runs": ["SRR1"], "lengths": {300: 14, 301: 46}}
+    c = preflight.cap_truncation({}, q, q, 27, 28, 429, batch)
+    assert c["params"]["trunclenf"] <= 300 - 27 - preflight.CAP_MARGIN
+    assert c["params"]["trunclenr"] <= 300 - 28 - preflight.CAP_MARGIN
+    assert not c["review"]
+
+
+def test_truncation_untouched_when_all_runs_share_one_length():
+    q = _quals(50, 301)
+    batch = {"length": 301, "n_runs": 60, "runs": ["SRR1"], "lengths": {301: 60}}
+    assert preflight.cap_truncation({}, q, q, 27, 28, 429, batch)["params"] == {}
+    assert preflight.cap_truncation({}, q, q, 27, 28, 429, None)["params"] == {}
+
+
+def test_truncation_cap_that_breaks_merging_goes_to_review():
+    q = _quals(50, 301)
+    batch = {"length": 200, "n_runs": 10, "runs": ["SRR1"], "lengths": {200: 10, 301: 50}}
+    c = preflight.cap_truncation({}, q, q, 27, 28, 429, batch)
+    assert c["params"] == {} and "too little overlap" in c["review"][0]
+

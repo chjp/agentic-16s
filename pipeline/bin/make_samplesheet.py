@@ -105,6 +105,7 @@ def load_runs(pmid: str) -> list[dict]:
             "instrument_platform": e.get("instrument_platform", ""),
             "instrument_model": e.get("instrument_model", ""),
             "read_count": e.get("read_count", ""),
+            "base_count": e.get("base_count", ""),
             "fastq_ftp": e.get("fastq_ftp", ""),
             "fastq_md5": e.get("fastq_md5", ""),
             "fastq_bytes": e.get("fastq_bytes", ""),
@@ -170,7 +171,7 @@ def balanced_subset(runs: list[dict], n: int) -> list[dict]:
 
 
 MANIFEST_FIELDS = ["run_accession", "protocol", "group", "sample_type", "library_strategy", "library_layout",
-                   "instrument_platform", "instrument_model", "read_count", "n_files", "fastq_urls",
+                   "instrument_platform", "instrument_model", "read_count", "base_count", "n_files", "fastq_urls",
                    "fastq_md5", "fastq_bytes", "status", "status_reason", "library_layout_archive"]
 
 

@@ -151,10 +151,18 @@ def load_primer_catalog() -> list[dict]:
 
 
 def catalog_by_seq(seq: str | None) -> dict | None:
+    """The catalog primer with this sequence; failing that, the one it is a 3'-shortened copy of
+    (at most 2 bases shorter, e.g. 338F printed as ACTCCTACGGGAGGCAGCA in 36111238)."""
     if not seq:
         return None
-    for r in load_primer_catalog():
-        if r["sequence"].upper() == seq.upper():
+    s = seq.upper()
+    cat = load_primer_catalog()
+    for r in cat:
+        if r["sequence"].upper() == s:
+            return r
+    for r in cat:
+        c = r["sequence"].upper()
+        if len(c) - 2 <= len(s) < len(c) and c.startswith(s):
             return r
     return None
 

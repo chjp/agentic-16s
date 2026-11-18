@@ -39,6 +39,7 @@ QMIN = 25                # same default as ampliseq --trunc_qmin
 RMIN = 0.75              # same default as ampliseq --trunc_rmin
 MIN_OVERLAP = 12         # DADA2 mergePairs minOverlap used by ampliseq
 LENGTH_SLACK = 20        # amplicons of real taxa can be longer than the E. coli length
+CAP_MARGIN = 2           # primer matches with an indel leave a read a base or two shorter
 
 # Settings that are the same for every study. Values here are part of params.json.
 FIXED_PARAMS = {
@@ -287,12 +288,77 @@ def decide_truncation(q1: list[str], q2: list[str], trim1: int, trim2: int, ampl
             "reasons": {"trunclenf": reason, "trunclenr": reason}, "review": [], "note": info}
 
 
+def run_read_lengths(manifest: list[dict], paired: bool) -> dict[str, int]:
+    """Read length per mate of every usable run whose reads all have one length (raw, untrimmed
+    reads: ENA's base_count is exactly read_count x mates x length). Runs with trimmed,
+    variable-length reads are left out: their average says nothing about their longest reads."""
+    out = {}
+    mates = 2 if paired else 1
+    for r in manifest:
+        try:
+            n, b = int(r.get("read_count") or 0), int(r.get("base_count") or 0)
+        except ValueError:
+            continue
+        if r.get("status") == "ok" and n > 0 and b > 0 and b % (n * mates) == 0:
+            out[r["run_accession"]] = b // (n * mates)
+    return out
+
+
+def shortest_batch(lengths: dict[str, int]) -> dict | None:
+    """The shortest read length that a whole batch of runs shares (at least 3 runs or 5 % of runs).
+    Raw MiSeq runs of one sequencing batch have one fixed length; a lone short run is not a batch
+    and is left to the QC gate, so it cannot pull the truncation down for every other run."""
+    if not lengths:
+        return None
+    counts = Counter(lengths.values())
+    need = max(3, round(0.05 * len(lengths)))
+    batches = sorted(L for L, n in counts.items() if n >= need)
+    if not batches:
+        return None
+    L = batches[0]
+    return {"length": L, "n_runs": counts[L], "runs": sorted(a for a, x in lengths.items() if x == L)[:5],
+            "lengths": dict(sorted(counts.items()))}
+
+
+def cap_truncation(params: dict, q1: list[str], q2: list[str], trim1: int, trim2: int,
+                   amplicon: int | None, batch: dict | None) -> dict:
+    """DADA2 drops every read shorter than truncLen. If a batch of runs has shorter reads than the
+    truncation chosen for the majority (36111238: 14 runs of 2x300 among 2x301, after an 8-nt spacer
+    and the primer R1 is 273 nt, truncLen 274), that batch loses almost all its reads. Cap the
+    truncation at what the shortest batch reaches, provided the pairs still merge."""
+    if not batch:
+        return {"params": {}, "reasons": {}, "review": [], "note": "no batch of runs with one fixed read length"}
+    pf = params.get("trunclenf") or min(auto_trunc(q1, trim1))
+    pr = params.get("trunclenr") or min(auto_trunc(q2, trim2))
+    cap_f, cap_r = batch["length"] - trim1 - CAP_MARGIN, batch["length"] - trim2 - CAP_MARGIN
+    note = {"shortest_batch_length": batch["length"], "shortest_batch_runs": batch["n_runs"],
+            "run_lengths": batch["lengths"], "predicted_trunc": [pf, pr], "cap": [cap_f, cap_r]}
+    mixed = batch["length"] < max(int(k) for k in batch["lengths"])
+    if not mixed and pf <= cap_f and pr <= cap_r:
+        return {"params": {}, "reasons": {}, "review": [], "note": note}
+    if not mixed:  # one read length for all runs: ampliseq's own choice cannot exceed it, keep it
+        return {"params": {}, "reasons": {}, "review": [], "note": note}
+    tf, tr = min(pf, cap_f), min(pr, cap_r)
+    if amplicon is not None and tf + tr < amplicon + LENGTH_SLACK + MIN_OVERLAP:
+        return {"params": {}, "reasons": {}, "note": note, "review": [
+            f"{batch['n_runs']} runs have {batch['length']}-nt reads: truncating to {tf}/{tr} so they keep their reads "
+            f"leaves too little overlap for a ~{amplicon} nt amplicon; process that batch separately or forward reads only"]}
+    reason = (f"{batch['n_runs']} runs ({', '.join(batch['runs'])}...) have {batch['length']}-nt reads (others: "
+              f"{', '.join(f'{k} nt x{v}' for k, v in batch['lengths'].items() if k != batch['length'])}); after primer and "
+              f"spacer removal ({trim1}/{trim2} nt, minus {CAP_MARGIN} nt margin) they reach {cap_f}/{cap_r} nt; "
+              f"ampliseq's automatic truncation follows the longer majority and would drop almost all their "
+              f"reads (36111238: 2% kept), so truncate at {tf}/{tr} (predicted automatic: {pf}/{pr})"
+              + ("" if amplicon is not None else " (amplicon length unknown: merge overlap not checked)"))
+    return {"params": {"trunclenf": tf, "trunclenr": tr}, "reasons": {"trunclenf": reason, "trunclenr": reason},
+            "review": [], "note": note}
+
+
 def med(xs):
     xs = [x for x in xs if x is not None]
     return round(statistics.median(xs), 1) if xs else None
 
 
-def decide(protocol: dict, runs_obs: list[dict], catalog: list[dict]) -> dict:
+def decide(protocol: dict, runs_obs: list[dict], catalog: list[dict], run_lengths: dict | None = None) -> dict:
     platform = protocol.get("platform") or ""
     paired = protocol.get("layout") == "PAIRED"
     fwd, rev = protocol.get("forward_primer_seq"), protocol.get("reverse_primer_seq")
@@ -420,6 +486,14 @@ def decide(protocol: dict, runs_obs: list[dict], catalog: list[dict]) -> dict:
         reasons.update(t["reasons"])
         review += t["review"]
         observed["truncation"] = t["note"]
+        # every run must reach the truncation, not only the sampled ones: use the largest spacer seen
+        mx1 = 0 if params.get("skip_cutadapt") else len(fwd) + max([o.get("fwd_offset_mode") or 0 for o in runs_obs])
+        mx2 = 0 if params.get("skip_cutadapt") else len(rev) + max([o.get("rev_offset_mode") or 0 for o in runs_obs])
+        c = cap_truncation(params, q1, q2, mx1, mx2, amplicon, shortest_batch(run_lengths or {}))
+        params.update(c["params"])
+        reasons.update(c["reasons"])
+        review += c["review"]
+        observed["truncation_cap"] = c["note"]
 
     # 4. binned quality scores (NovaSeq, newer MiSeq software)
     dq = min(o["distinct_quality_values"] for o in runs_obs)
@@ -522,7 +596,7 @@ def run(pmid: str, label: str) -> dict:
         result = {"decision": "needs_review", "review_reasons": ["could not read any run: " + "; ".join(errors)],
                   "params": {}, "reasons": {}, "observed": {}}
     else:
-        result = decide(protocol, obs, catalog)
+        result = decide(protocol, obs, catalog, run_read_lengths(manifest, protocol.get("layout") == "PAIRED"))
     if sra_note:
         result["observed"]["quality_fallback"] = sra_note
         if sra_note.get("used"):
