@@ -111,6 +111,49 @@ STUDY_NOTES = {
              "why": "Provenance decision.", "action": "Accept or reject document origin third_party_mirror for this study.", "priority": 3},
         ],
     },
+    "36111238": {
+        "design": "case_control",
+        "subject_key_source": "archive",
+        "subject_key_rule": "BioSample description AUC_n / RUC_n / HC_n, one stool sample per subject",
+        "groups": {
+            "AUC": {"definition": "Active ulcerative colitis (Mayo score / DAI)", "extra": {"disease_activity": "active"}},
+            "RUC": {"definition": "Ulcerative colitis in remission", "extra": {"disease_activity": "remission"}},
+            "HC": {"definition": "Healthy controls, not related to the patients"},
+        },
+        "tasks": [],
+    },
+    "37696680": {
+        "design": "case_control",
+        "subject_key_source": "archive",
+        "subject_key_rule": "RCU-<n> shared by the 16S and ITS2 BioSamples of one patient; CTRL_<n> for biobank controls",
+        "groups": {
+            "PSC-UC": {"definition": "Pediatric UC with primary sclerosing cholangitis", "extra": {"psc": "true"}},
+            "UC": {"definition": "Pediatric ulcerative colitis without PSC"},
+            "CTRL": {"definition": "Healthy children of the OPBG reference biobank (PRJNA280490); the paper used an unnamed 26 of them"},
+        },
+        "tasks": [
+            {"kind": "contact_authors", "title": "Which 26 biobank controls were used (37696680)",
+             "what": "The paper compares patients with 26 controls taken from 95 pediatric CTRL runs in PRJNA280490 without naming them.",
+             "why": "Owner decision 2026-11-17: only the 53 patient runs are processed until the controls are known.",
+             "action": "Email the corresponding author for the CTRL run list.", "priority": 3},
+        ],
+    },
+    "42349924": {
+        "design": "case_control",
+        "subject_key_source": "archive",
+        "subject_key_rule": "BioSample subject code S<nnnn>, one stool sample per subject",
+        "groups": {
+            "CD_pediatric": {"definition": "Newly diagnosed pediatric Crohn's disease (MiSeq V3-V4)"},
+            "control_pediatric": {"definition": "Healthy children below 16 years (PRJNA1308018, MiSeq V3-V4)"},
+            "CD_adult": {"definition": "Newly diagnosed adult Crohn's disease (PacBio full-length, not processed yet)"},
+            "control_adult": {"definition": "Healthy adults (PacBio full-length, not processed yet)"},
+        },
+        "tasks": [
+            {"kind": "contact_authors", "title": "7 controls missing from the archive (42349924)",
+             "what": "The paper has 30 pediatric and 82 adult controls; the archive holds 25 and 80.",
+             "why": "Neither BioProject has them.", "action": "Ask the authors whether they can be deposited.", "priority": 3},
+        ],
+    },
 }
 
 DIAG = {"cd": "cd", "uc": "uc", "ibdu": "ibdu", "ibd": "ibd", "control": "healthy"}
