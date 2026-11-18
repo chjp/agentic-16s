@@ -26,6 +26,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -122,9 +123,18 @@ def download_sra(run: str, loc: dict, sra: Path) -> None:
 
 def fetch_split(run: str, outdir: Path, cache_dir: Path | None = None) -> dict:
     """NCBI's normalized .sra (md5-checked) dumped to <run>_1.fastq.gz and <run>_2.fastq.gz (one file for
-    single-end runs) in ENA's FASTQ format; the .sra is deleted."""
+    single-end runs) in ENA's FASTQ format; the .sra is deleted. Files already in outdir (dumped by
+    preflight's quality check) are reused. Reads without a mate, which --split-3 writes to
+    <run>.fastq.gz next to the pair, are dropped: that file sorts before <run>_1 and would be taken as R1."""
     if not dump_cmd(SPLIT_DUMP):
         raise RuntimeError("sra-tools not found (see the module docstring for the conda env)")
+    have = mate_files(outdir, run) or [p for p in [outdir / f"{run}.fastq.gz"] if p.exists()]
+    if have:
+        with gzip.open(have[0], "rt") as fh:
+            reads = sum(1 for _ in fh) // 4
+        loc = locate(run, cache_dir) or {}
+        return {"run": run, "paths": [str(p) for p in have], "reads": reads, "sra_md5": loc.get("md5"),
+                "sra_bytes": loc.get("size"), "url": loc.get("url"), "reused": True}
     loc = locate(run, cache_dir)
     if not loc:
         raise RuntimeError(f"{run}: NCBI has no normalized .sra with quality scores")
@@ -139,7 +149,7 @@ def fetch_split(run: str, outdir: Path, cache_dir: Path | None = None) -> dict:
         proc = subprocess.run([*dump_cmd(SPLIT_DUMP), "-O", str(tmp), str(sra)], capture_output=True)
         if proc.returncode != 0:
             raise RuntimeError(f"{run}: {SPLIT_DUMP[0]} failed: {proc.stderr.decode()[-300:]}")
-        files = sorted(tmp.glob(f"{run}*.fastq.gz"))
+        files = mate_files(tmp, run) or sorted(tmp.glob(f"{run}*.fastq.gz"))
         if not files:
             raise RuntimeError(f"{run}: {SPLIT_DUMP[0]} wrote no FASTQ")
         paths = []
@@ -152,6 +162,12 @@ def fetch_split(run: str, outdir: Path, cache_dir: Path | None = None) -> dict:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return {"run": run, "paths": paths, "reads": reads, "sra_md5": loc["md5"], "sra_bytes": size, "url": loc["url"]}
+
+
+def mate_files(folder: Path, run: str) -> list[Path]:
+    """<run>_1.fastq.gz and <run>_2.fastq.gz if both are in folder, else []."""
+    pair = sorted(p for p in folder.glob(f"{run}_*.fastq.gz") if re.fullmatch(rf"{run}_[12]\.fastq\.gz", p.name))
+    return pair if len(pair) == 2 else []
 
 
 def fetch(run: str, outdir: Path, cache_dir: Path | None = None) -> dict:

@@ -544,12 +544,17 @@ def quality_fallback(pmid, label, obs, errors, protocol, catalog):
                              "reason": "sra-tools not installed, so NCBI's .sra could not be checked"}
     outdir = common.data_dir() / "fastq" / pmid / label / "fastq"
     cache = common.STUDIES / pmid / "sources" / "archive"
+    paired = protocol.get("layout") == "PAIRED"
     new_obs, new_err, fetched = [], [], []
     for o in obs:
         acc = o["run_accession"]
         try:
-            f = sra_source.fetch(acc, outdir, cache)
-            no = observe_run({"run_accession": acc, "fastq_urls": f["path"]}, protocol, catalog)
+            # paired runs as R1/R2 files (37696680, E22); fetch() writes one file, made for 454 single-end reads
+            f = sra_source.fetch_split(acc, outdir, cache) if paired else sra_source.fetch(acc, outdir, cache)
+            files = f["paths"] if paired else [f["path"]]
+            if paired and len(files) != 2:
+                raise RuntimeError(f"NCBI's .sra gave {len(files)} file(s), expected R1 and R2")
+            no = observe_run({"run_accession": acc, "fastq_urls": ";".join(files)}, protocol, catalog)
             if no["n_reads"] != o["n_reads"] or no["top_r1_starts"] != o["top_r1_starts"]:
                 raise RuntimeError("reads differ from ENA's FASTQ")
             new_obs.append(no)

@@ -183,11 +183,15 @@ def stage_preflight(pmid: str, tag: str, ctx: dict) -> None:
 
 def fetch_from_sra(pmid: str, tag: str, d: Path, outdir: Path) -> None:
     """Runs whose ENA FASTQ lost the quality scores: NCBI's normalized .sra, md5-checked, dumped, .sra deleted."""
-    runs = [r["run_accession"] for r in common.read_tsv(d / "manifest.tsv") if r["status"] == "ok"]
+    rows = [r for r in common.read_tsv(d / "manifest.tsv") if r["status"] == "ok"]
+    runs = [r["run_accession"] for r in rows]
     cache = common.STUDIES / pmid / "sources" / "archive"
     started, done, errors = now(), [], []
+    # paired runs as R1/R2 (finalize finds <run>_1/_2 on disk); single-end through fetch() with 454 clipping
+    fetcher = {r["run_accession"]: sra_source.fetch_split if r["library_layout"] == "PAIRED" else sra_source.fetch
+               for r in rows}
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futs = {pool.submit(sra_source.fetch, acc, outdir / "fastq", cache): acc for acc in runs}
+        futs = {pool.submit(fetcher[acc], acc, outdir / "fastq", cache): acc for acc in runs}
         for f in as_completed(futs):
             try:
                 done.append(f.result())
@@ -195,8 +199,9 @@ def fetch_from_sra(pmid: str, tag: str, d: Path, outdir: Path) -> None:
                 errors.append(f"{futs[f]}: {e}")
     gb = sum(x["sra_bytes"] or 0 for x in done) / 1e9
     common.log_event(pmid, "download FASTQ (NCBI normalized .sra)", "success" if not errors else "partial",
-                     f"{tag}: {len(done)} of {len(runs)} runs, {gb:.2f} GB of .sra (md5-checked, dumped with fastq-dump "
-                     f"--clip, .sra deleted); started {started}" + (f"; failed: {'; '.join(errors[:5])}" if errors else ""),
+                     f"{tag}: {len(done)} of {len(runs)} runs, {gb:.2f} GB of .sra (md5-checked; dumped with fastq-dump "
+                     + ("--split-3 into R1/R2" if any(fetcher[x["run"]] is sra_source.fetch_split for x in done) else "--clip")
+                     + f", .sra deleted); started {started}" + (f"; failed: {'; '.join(errors[:5])}" if errors else ""),
                      source="https://sra-pub-run-odp.s3.amazonaws.com (via NCBI SDL locator)",
                      files=[outdir / "fastq"])
     if not done:

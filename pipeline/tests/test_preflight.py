@@ -197,3 +197,22 @@ def test_truncation_cap_that_breaks_merging_goes_to_review():
     c = preflight.cap_truncation({}, q, q, 27, 28, 429, batch)
     assert c["params"] == {} and "too little overlap" in c["review"][0]
 
+
+def test_quality_fallback_dumps_paired_runs_as_r1_and_r2(tmp_path, monkeypatch):
+    """37696680 (E22): ENA FASTQ from SRA Lite on a paired study; the NCBI copy must come as two files."""
+    seen = {}
+    monkeypatch.setattr(preflight.sra_source, "have_tools", lambda: True)
+    monkeypatch.setattr(preflight.sra_source, "fetch_split", lambda acc, outdir, cache: {
+        "run": acc, "paths": [f"{acc}_1.fastq.gz", f"{acc}_2.fastq.gz"], "sra_bytes": 10, "reads": 5})
+    monkeypatch.setattr(preflight.sra_source, "fetch",
+                        lambda *a: (_ for _ in ()).throw(AssertionError("single-file dump used for paired data")))
+
+    def fake_observe(run, protocol, catalog):
+        seen[run["run_accession"]] = run["fastq_urls"]
+        return {"run_accession": run["run_accession"], "n_reads": 5, "top_r1_starts": {"ACTC": 5},
+                "distinct_quality_values": 38}
+    monkeypatch.setattr(preflight, "observe_run", fake_observe)
+    monkeypatch.setattr(preflight.common, "data_dir", lambda: tmp_path)
+    ena = [{"run_accession": "SRR9", "n_reads": 5, "top_r1_starts": {"ACTC": 5}, "distinct_quality_values": 2}]
+    obs, errors, note = preflight.quality_fallback("1", "main", ena, [], PE, [])
+    assert note["used"] and seen == {"SRR9": "SRR9_1.fastq.gz;SRR9_2.fastq.gz"}
