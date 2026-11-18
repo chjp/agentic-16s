@@ -435,6 +435,45 @@ memory and `gcp-migration.md` section 6, after the GCE batch had finished. They 
 - **Evidence:** `infra/gcloud16s` (comment), the MD5 of the re-downloaded `results.tgz` matches
   the bucket's.
 
+### E22. Two Batch jobs failed on the same evening for two different reasons (2026-11-17, 37696680 smoke, 36111238 full)
+
+- **Symptom:** two jobs submitted back to back both failed early.
+  - 37696680 smoke (`a16s-37696680-20261117-220551`, and again unchanged as `...-222450`): preflight
+    crashed with `TypeError: '<' not supported between instances of 'NoneType' and 'float'` in `decide()`.
+  - 36111238 full (`a16s-36111238-20261117-221219`): fetchngs stopped because
+    `SRA_RUNINFO_TO_FTP (SRR20914746)` wrote no output. Its `SRA_IDS_TO_RUNINFO` had exited 0 with an
+    empty runinfo, and `SRA_IDS_TO_RUNINFO (SRR20914760)` had failed once and been retried.
+- **Cause, 36111238 (inferred):** an empty answer from ENA's metadata API. The same job resubmitted
+  unchanged ran to the end (`a16s-36111238-20261117-223117`, 88.5 min on the VM).
+- **Cause, 37696680 (confirmed):** not ENA flakiness. First I blamed ENA because both jobs failed
+  within 13 minutes; the unchanged resubmission failed the same way, which ruled that out.
+  - ENA's FASTQ for this study is derived from SRA Lite: every quality character is `?`
+    (2 distinct values), like the 454 study in E3.
+  - preflight then switches to NCBI's normalized .sra, which still has the real scores (30 MB for
+    SRR23492472 against 12.5 MB for the Lite copy). But that fallback was built for the single-end 454
+    study: `sra_source.fetch` dumps a paired run into one file, so preflight saw no R2, had no reverse
+    primer share, and `decide()` compared `None` with a number.
+  - On the Mac the same runs read fine, because sra-tools is not installed there and the fallback is
+    skipped; the Batch VM has sra-tools.
+- **Cost (measured):** 4.9 + 4.1 + 8.0 VM minutes, about $0.10 (estimates from the job records), and
+  about 40 min to trace.
+- **Fix:**
+  - 36111238: resubmitted unchanged.
+  - preflight: a mate file that yields no reads is now an error for that run, and a paired protocol
+    with no R2 observations goes to `needs_review` instead of crashing (tests in `test_preflight.py`).
+  - Proposed, waiting for the owner: dump paired runs with `sra_source.fetch_split` (R1/R2 in ENA's
+    format) in preflight's quality fallback and in the fetch stage.
+- **Scale-up note:**
+  - A fallback path tested on one study type (454 single-end) is untested for the others; give
+    each fallback a test per layout.
+  - Two failures close together are not proof of a shared cause: resubmit once, unchanged, before
+    concluding "transient".
+  - Every external answer needs an "empty is an error" check, not only an "HTTP error is an error"
+    check.
+- **Evidence:** `~/agentic16s-data/batch/runs/a16s-37696680-20261117-222450/output/runner.log`,
+  `.../a16s-36111238-20261117-221219/extracted/data/pipeline/36111238/main/fetchngs.stdout.log`,
+  NCBI SDL for SRR23492472 (normalized .sra and the submitted R1/R2 FASTQ are both listed).
+
 ---
 
 ## Resource numbers so far

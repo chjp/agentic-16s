@@ -130,3 +130,22 @@ def test_decide_454_trimmed_reverse_reads_with_lost_quality():
     assert r["observed"]["orientation"] == "reverse" and r["params"]["skip_cutadapt"] is True
     assert r["params"]["dada_taxonomy_rc"] is True
     assert r["decision"] == "needs_review" and "carry no information" in r["review_reasons"][0]
+
+
+def test_empty_mate_file_is_an_error_not_zero_percent(monkeypatch):
+    """E22: ENA served empty bodies; preflight must not read that as 'no primers'."""
+    reads = [("@r1", "CCTACGGGAGGCAGCAG" + "A" * 200, "I" * 217)] * 5
+    monkeypatch.setattr(preflight, "stream_reads", lambda url, *a, **k: [] if url.endswith("_2.fastq.gz") else reads)
+    run = {"run_accession": "R", "fastq_urls": "x/R_1.fastq.gz;x/R_2.fastq.gz"}
+    try:
+        preflight.observe_run(run, PE, [])
+    except RuntimeError as e:
+        assert "R2 file gave no reads" in str(e)
+    else:
+        raise AssertionError("an empty R2 file must raise")
+
+
+def test_decide_paired_without_r2_observations_needs_review():
+    """A paired protocol whose observations lack R2 (e.g. a single dumped file) goes to review, no crash."""
+    r = preflight.decide(PE, [_obs(pct_fwd_at_r1_start=99, pct_rev_at_r1_start=0)], [])
+    assert r["decision"] == "needs_review" and "R2" in r["review_reasons"][0]

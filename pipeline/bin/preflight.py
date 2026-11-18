@@ -200,6 +200,10 @@ def observe_run(run: dict, protocol: dict, catalog: list[dict]) -> dict:
     urls = run["fastq_urls"].split(";")
     r1 = stream_reads(urls[0])
     r2 = stream_reads(urls[1]) if len(urls) > 1 else []
+    # An empty answer is not "0 % primers": ENA sometimes serves empty bodies under load (E22).
+    for name, reads, url in (("R1", r1, urls[0]), ("R2", r2, urls[1] if len(urls) > 1 else None)):
+        if url and not reads:
+            raise RuntimeError(f"{name} file gave no reads: {url}")
     s1 = [s for _, s, _ in r1]
     s2 = [s for _, s, _ in r2]
     obs = {"run_accession": run["run_accession"], "n_reads": len(r1),
@@ -331,6 +335,10 @@ def decide(protocol: dict, runs_obs: list[dict], catalog: list[dict]) -> dict:
     # 2. sequencing type and primer presence
     votes = {k: med([(o.get("orientation_r1") or {}).get(k) for o in runs_obs]) or 0.0 for k in ("gene", "reverse")}
     observed["orientation_votes_r1"] = votes
+    if f1 is None or (paired and r2 is None):
+        review.append("no primer observations for " + ("R1" if f1 is None else "R2") +
+                      f" in any sampled run (layout {protocol.get('layout')}): the reads could not be read as expected")
+        return finish(params, reasons, review, observed, runs_obs)
     if paired:
         params["sequencing_type"] = "illumina_pe"
         present = min(f1, r2) >= PRESENT_PCT
