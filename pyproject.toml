@@ -23,6 +23,8 @@ dev = [
     "shellcheck-py>=0.10",
 ]
 db = ["psycopg[binary]>=3.2"]
+# discovery/ (paper search, screening, archive lookups): only the NCBI scripts need Biopython
+discovery = ["biopython>=1.81"]
 ml = [
     { include-group = "db" },
     "numpy>=1.26",
@@ -44,13 +46,13 @@ default-groups = ["dev"]
 environments = ["sys_platform == 'darwin'", "sys_platform == 'linux'"]
 
 [tool.pytest.ini_options]
-testpaths = ["pipeline/tests", "db/tests", "ml/tests"]
+testpaths = ["pipeline/tests", "db/tests", "discovery/tests", "ml/tests"]
 addopts = "-ra"
 
 [tool.ruff]
 target-version = "py39"
 line-length = 120
-extend-exclude = ["paper-discover2sra", "phase0", "studies/*/work", "studies/*/sources"]
+extend-exclude = ["paper-discover2sra", "discovery/runs", "phase0", "studies/*/work", "studies/*/sources"]
 
 [tool.ruff.lint]
 # Start with the rules that find real bugs (syntax errors, undefined names, unused imports);

@@ -45,7 +45,8 @@ syntax_check() {
   # progress/ is gitignored, so it is checked only where it exists (the Mac, not CI)
   "$@" python - <<'PY'
 import glob, sys
-files = sorted(glob.glob("pipeline/bin/*.py") + glob.glob("infra/*.py") + glob.glob("progress/*.py"))
+files = sorted(glob.glob("pipeline/bin/*.py") + glob.glob("infra/*.py") + glob.glob("progress/*.py")
+               + glob.glob("discovery/*.py"))
 sys.argv[1:] = files
 bad = 0
 for f in files:
@@ -126,6 +127,8 @@ fi
 run "pipeline tests on Python $PY_MAC" uv_mac pytest -q pipeline/tests
 run "pipeline tests on Python $PY_VM" uv_vm pytest -q pipeline/tests
 run "database loader tests on Python $PY_VM" uv_vm --group db pytest -q db/tests
+run "discovery tests on Python $PY_MAC" uv_mac pytest -q discovery/tests
+run "discovery tests on Python $PY_VM" uv_vm pytest -q discovery/tests
 if [[ $FAST == 1 ]]; then
   skip "ML tests" "--fast"
 else

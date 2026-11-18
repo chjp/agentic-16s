@@ -38,3 +38,6 @@ __pycache__/
 # Kept out of the repo, which will be public later: personal account details, and a separate private repo
 docs/gcp-handoff.md
 paper-discover2sra/
+
+# Discovery runs: paper metadata, full-text XML, supplements and stored LLM replies (paper text is never committed)
+discovery/runs/

@@ -470,7 +470,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("resolve", help="look for a legal free copy and download it")
     r.add_argument("pmids", nargs="*")
-    r.add_argument("--from-tsv", type=Path, help="papers_fulltext.tsv from paper-discover2sra")
+    r.add_argument("--from-tsv", type=Path, help="papers_fulltext.tsv of a discovery run (discovery/runs/<run>/)")
     r.add_argument("--status", default="NO_PMC,NOT_OA", help="download_status values to take from the TSV")
     r.add_argument("--force", action="store_true", help="resolve again even if fetched or wont_do")
     t = sub.add_parser("open-task", help="ask a person for the paper (inbox/<PMID>/WANTED.md)")

@@ -10,7 +10,7 @@ Usage:
 Reads from the study folder: sample_sheet.tsv, sra_runs.tsv, validation.json, log.jsonl,
 sources/fulltext.xml or sources/paper.pdf, sources/supplements/*, sources/haiku_extraction.json,
 fetch_result.json (how the full text was obtained, from pipeline/bin/fetch_paper.py); plus paper
-metadata from the first paper-discover2sra/runs/*/papers.tsv that lists the PMID.
+metadata from the first discovery/runs/*/papers.tsv that lists the PMID.
 
 Curator knowledge that is not in the files (which control groups are relatives, how
 subject ids were derived, open questions for people) sits in STUDY_NOTES below, one
@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from migrate import database_url  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-RUNS_DIR = ROOT / "paper-discover2sra/runs"
+RUNS_DIR = ROOT / "discovery/runs"
 LOADER = "script:db/load_study.py"
 
 STUDY_NOTES = {

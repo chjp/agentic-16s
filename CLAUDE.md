@@ -24,6 +24,12 @@ were measured, sampled or estimated. Per-step resource use is written automatica
 `studies/<PMID>/resource_profile.json` by `pipeline/bin/resource_monitor.py`; summarize it with
 `python3 -I pipeline/bin/resource_monitor.py report`.
 
+## One repository
+
+All code lives in this repository (github.com/chjp/agentic-16s). The literature stages are in
+`discovery/` (moved from `paper-discover2sra` at 8c602c0, which is frozen: do not edit or commit there).
+Discovery runs are written to `discovery/runs/` (git-ignored).
+
 ## When a study shows a data problem the pipeline did not handle
 
 The pipeline should get more robust with every study. When new data breaks it or gives a wrong

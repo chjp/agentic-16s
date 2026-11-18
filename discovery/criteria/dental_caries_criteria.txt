@@ -1,0 +1,14 @@
+INCLUSION CRITERIA (ALL must be met):
+1. Studies human saliva samples (not other oral sites like plaque, tongue, gingival crevicular fluid, or buccal swabs)
+2. Primary focus on dental caries (cavities, tooth decay) as the main outcome or disease of interest
+3. Uses 16S rRNA gene sequencing technology (not shotgun metagenomics, metabolomics, proteomics, or culture-based methods)
+4. Reports microbiome/microbial community analysis (not just single pathogen detection)
+5. Original research article with data collection (not reviews, meta-analyses, or opinion pieces)
+
+EXCLUSION CRITERIA (any one leads to exclusion):
+1. Animal models or in vitro studies (exclude non-human studies)
+2. Primary focus on other oral diseases (periodontitis, gingivitis, oral cancer, candidiasis, etc.)
+3. Studies of dental treatments or interventions without baseline microbiome data
+4. Only plaque or biofilm samples (no saliva component)
+5. Purely computational or methods development papers without novel biological findings
+6. Case reports or small pilot studies with n < 10 samples

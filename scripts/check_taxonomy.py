@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "docs" / "failure-taxonomy.md"
-TEST_DIRS = ["pipeline/tests", "db/tests", "ml/tests"]
+TEST_DIRS = ["pipeline/tests", "db/tests", "discovery/tests", "ml/tests"]
 STATUSES = ("handled", "review only", "curation")
 
 

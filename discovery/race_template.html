@@ -1,0 +1,601 @@
+<title>IBD Paper Race</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a running track (tartan band) crosses the page; each checkpoint drops a siding into a pen where stopped papers wait. Phones: the track runs down the left edge. */
+:root {
+  --infield: #eef2ec;
+  --surface: #ffffff;
+  --ink: #17201b;
+  --muted: #5b6a61;
+  --line: #cbd5ce;
+  --track: #b5462b;
+  --track-lane: #f6e9e1;
+  --gold: #b88a12;
+  --b-g1: #6f7c74;
+  --b-g2: #3f66a8;
+  --b-g4: #9a6a0c;
+  --b-g5: #7550a3;
+  --b-finish: #1f7a4d;
+  --shadow: 0 1px 2px rgb(23 32 27 / 0.12), 0 6px 18px rgb(23 32 27 / 0.10);
+  --f-display: "Big Shoulders Display", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --infield: #0f1512; --surface: #172019; --ink: #e5ece7; --muted: #93a399; --line: #2b3731;
+    --track: #93402a; --track-lane: #e9d3c7; --gold: #e0b43c;
+    --b-g1: #9aa79f; --b-g2: #7ea1e0; --b-g4: #d9a440; --b-g5: #b393de; --b-finish: #5cc28c;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.45);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --infield: #0f1512; --surface: #172019; --ink: #e5ece7; --muted: #93a399; --line: #2b3731;
+  --track: #93402a; --track-lane: #e9d3c7; --gold: #e0b43c;
+  --b-g1: #9aa79f; --b-g2: #7ea1e0; --b-g4: #d9a440; --b-g5: #b393de; --b-finish: #5cc28c;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.45);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--infield); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+a { color: inherit; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Header */
+header { padding-block: 28px 8px; display: grid; gap: 14px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(38px, 6.4vw, 72px); line-height: 0.92; margin: 0; letter-spacing: 0.005em; text-transform: uppercase; text-wrap: balance; }
+h1 .fin { color: var(--b-finish); }
+.lede { margin: 0; max-width: 68ch; color: var(--muted); }
+.board { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; min-width: 120px; }
+.stat b { display: block; font-family: var(--f-display); font-weight: 800; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--muted); }
+.stat.finish b { color: var(--b-finish); }
+.replay { font: 600 14px var(--f-body); color: var(--infield); background: var(--ink); border: 0; border-radius: 6px; padding: 0 18px; min-height: 44px; cursor: pointer; align-self: center; }
+.replay:hover { opacity: 0.88; }
+
+/* Stage */
+.stage-wrap { padding-block: 12px 8px; }
+#stage { position: relative; width: 100%; }
+.rail { position: absolute; background: var(--track); border-radius: 3px; }
+.rail.h { background-image: repeating-linear-gradient(180deg, transparent 0 10px, var(--track-lane) 10px 11px); }
+.rail.v { background-image: repeating-linear-gradient(90deg, transparent 0 10px, var(--track-lane) 10px 11px); }
+.siding { position: absolute; background: var(--track); opacity: 0.55; }
+.gate-line { position: absolute; background: var(--track-lane); }
+.checker { position: absolute; background: repeating-conic-gradient(var(--ink) 0 25%, var(--surface) 0 50%) 0 0 / 8px 8px; }
+.st-label { position: absolute; display: grid; gap: 0; line-height: 1.15; }
+.st-num { font-family: var(--f-display); font-weight: 800; font-size: 22px; line-height: 1; }
+.st-name { font-weight: 600; font-size: 13px; }
+.st-note { font-size: 11.5px; color: var(--muted); }
+.pen { position: absolute; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.pen-head { position: absolute; left: 8px; right: 8px; top: 6px; display: flex; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--muted); }
+.pen-head b { color: var(--ink); font-weight: 600; }
+.grp { position: absolute; font-size: 11.5px; font-weight: 600; display: flex; gap: 6px; align-items: baseline; white-space: nowrap; }
+.grp em { font-style: normal; font-family: var(--f-mono); font-weight: 500; }
+.pen.finish { border-color: var(--b-finish); border-width: 2px; }
+.pass { position: absolute; display: flex; align-items: baseline; gap: 4px; padding: 1px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; font-size: 11px; color: var(--muted); white-space: nowrap; z-index: 1; }
+.pass b { font-family: var(--f-mono); font-weight: 500; font-size: 12.5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.pass.bump b { color: var(--b-finish); }
+
+.runner { position: absolute; left: 0; top: 0; width: 22px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer; z-index: 2; will-change: transform; }
+.runner svg { width: 22px; height: 22px; display: block; filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.25)); }
+.runner.running svg { animation: bob 0.32s ease-in-out infinite alternate; }
+@keyframes bob { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }
+.runner.stopped:not(.won) svg { filter: grayscale(0.45) drop-shadow(0 1px 1px rgb(0 0 0 / 0.2)); }
+.runner .clip, .runner .medal { position: absolute; border-radius: 50%; opacity: 0; transition: opacity 0.3s; }
+.runner .clip { width: 7px; height: 7px; right: -2px; top: -2px; background: var(--b-g2); border: 1px solid var(--surface); }
+.runner .medal { width: 9px; height: 9px; right: -3px; bottom: -3px; background: var(--gold); border: 1px solid var(--surface); }
+.runner.has-clip .clip, .runner.won .medal { opacity: 1; }
+.runner:hover, .runner:focus-visible, .runner.sel { z-index: 5; }
+.runner:hover svg, .runner.sel svg { transform: scale(1.35); }
+
+/* Card */
+#card { position: absolute; z-index: 20; width: min(340px, calc(100vw - 32px)); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); padding: 12px 14px; font-size: 13px; line-height: 1.45; }
+#card .where { font-size: 11.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+#card h3 { font-size: 14px; line-height: 1.3; margin: 4px 0 6px; font-weight: 600; }
+#card .ids { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); }
+#card .reason { margin: 8px 0 0; }
+#card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0 0; font-size: 12.5px; }
+#card dt { color: var(--muted); }
+#card dd { margin: 0; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+#card .close { position: absolute; right: 6px; top: 4px; border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 4px 8px; }
+@media (max-width: 560px) {
+  #card { position: fixed; left: max(12px, env(safe-area-inset-left, 0px)) !important; right: max(12px, env(safe-area-inset-right, 0px)); top: auto !important; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: auto; }
+}
+
+/* Results */
+.results { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 28px; padding-block: 24px 16px; }
+@media (max-width: 860px) { .results { grid-template-columns: minmax(0, 1fr); } }
+h2 { font-family: var(--f-display); font-weight: 800; font-size: 28px; text-transform: uppercase; margin: 0 0 8px; letter-spacing: 0.01em; }
+.tbl-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th { text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--f-mono); }
+tr.gate-row td { font-weight: 600; background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.bar { height: 8px; border-radius: 2px; min-width: 2px; }
+.mono { font-family: var(--f-mono); font-size: 12px; }
+.fin-title { min-width: 220px; }
+.empty { color: var(--muted); font-style: italic; }
+footer { padding-block: 8px 40px; color: var(--muted); font-size: 12.5px; }
+footer p { max-width: 90ch; margin: 0 0 6px; }
+
+@media (prefers-reduced-motion: reduce) { .runner.running svg { animation: none; } }
+</style>
+
+<header class="wrap">
+  <div class="eyebrow" id="eyebrow">paper-discover2sra · test run</div>
+  <h1 id="headline">IBD papers race to the <span class="fin">SRA</span></h1>
+  <p class="lede" id="lede"></p>
+  <div class="board" id="board"></div>
+</header>
+
+<section class="wrap stage-wrap" aria-label="Race track">
+  <div id="stage"></div>
+</section>
+
+<section class="wrap results">
+  <div>
+    <h2>Where they stopped</h2>
+    <div class="tbl-scroll"><table id="stops"></table></div>
+  </div>
+  <div>
+    <h2>Finishers</h2>
+    <div class="tbl-scroll"><table id="finishers"></table></div>
+  </div>
+</section>
+
+<footer class="wrap" id="foot"></footer>
+
+<div id="card" hidden role="dialog" aria-live="polite"></div>
+
+<script id="race-data" type="application/json">__RACE_DATA__</script>
+<script>
+(function () {
+  const DATA = JSON.parse(document.getElementById('race-data').textContent);
+  const M = DATA.meta, GATES = DATA.gates, P = DATA.papers;
+  const AV = 22, GAP = 4, CELL = AV + GAP;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const stage = document.getElementById('stage');
+  const card = document.getElementById('card');
+
+  const STATIONS = [{ id: 'start', name: 'Start', note: M.n + ' papers' }]
+    .concat(GATES.map((g, i) => ({ id: g.id, num: i + 1, name: g.name, note: g.note, gate: g })))
+    .concat([{ id: 'finish', name: 'Finish', note: 'SRA samples retrieved' }]);
+  const colorOf = id => `var(--b-${id === 'finish' ? 'finish' : id})`;
+
+  // ---------- helpers ----------
+  function el(tag, cls, parent, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function hash(str) { let h = 2166136261; for (const c of String(str)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function rng(seed) { let s = seed || 1; return () => { s = Math.imul(s ^ (s >>> 15), 2246822507) ^ Math.imul(s ^ (s >>> 13), 3266489909); s ^= s >>> 16; return (s >>> 0) / 4294967296; }; }
+  const fmt = n => Number(n).toLocaleString('en-US');
+
+  // ---------- faces ----------
+  const SKIN = ['#f2c7a5', '#e0a77e', '#c68657', '#9c6440', '#6e4428', '#f5d6b8', '#d9b08c', '#b97c52'];
+  const HAIR = ['#2b1d14', '#5a3a22', '#a5662a', '#d8b26a', '#7d7d7d', '#1d2b4a', '#8c2f39', '#3d5a3a'];
+  function face(pmid) {
+    const r = rng(hash(pmid));
+    const skin = SKIN[Math.floor(r() * SKIN.length)], hair = HAIR[Math.floor(r() * HAIR.length)];
+    const hairStyle = Math.floor(r() * 5), eyes = Math.floor(r() * 4), mouth = Math.floor(r() * 3);
+    let s = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="9.5" fill="${skin}" stroke="rgb(0 0 0 / .35)" stroke-width=".8"/>`;
+    if (hairStyle === 0) s += `<path d="M3 12 Q4 3 12 3 Q20 3 21 12 Q17 7 12 7 Q7 7 3 12Z" fill="${hair}"/>`;
+    if (hairStyle === 1) s += `<path d="M3.5 10 Q12 1 20.5 10 L20.5 8 Q12 -1 3.5 8Z" fill="${hair}"/><rect x="2.5" y="8" width="19" height="2.4" rx="1.2" fill="${hair}"/>`;
+    if (hairStyle === 2) s += `<circle cx="12" cy="3.6" r="2.6" fill="${hair}"/><path d="M3.5 11 Q5 4 12 4 Q19 4 20.5 11 Q16 6.5 12 6.5 Q8 6.5 3.5 11Z" fill="${hair}"/>`;
+    if (hairStyle === 3) s += `<rect x="4" y="6.2" width="16" height="2.2" rx="1.1" fill="${hair}"/>`;
+    const ey = 12.5;
+    if (eyes === 0) s += `<circle cx="8.6" cy="${ey}" r="1.15" fill="#1a1a1a"/><circle cx="15.4" cy="${ey}" r="1.15" fill="#1a1a1a"/>`;
+    if (eyes === 1) s += `<ellipse cx="8.6" cy="${ey}" rx=".9" ry="1.5" fill="#1a1a1a"/><ellipse cx="15.4" cy="${ey}" rx=".9" ry="1.5" fill="#1a1a1a"/>`;
+    if (eyes === 2) s += `<path d="M7.3 ${ey} q1.3 -1.6 2.6 0 M14.1 ${ey} q1.3 -1.6 2.6 0" stroke="#1a1a1a" stroke-width="1.1" fill="none" stroke-linecap="round"/>`;
+    if (eyes === 3) s += `<circle cx="8.6" cy="${ey}" r="2.1" fill="none" stroke="#1a1a1a" stroke-width=".9"/><circle cx="15.4" cy="${ey}" r="2.1" fill="none" stroke="#1a1a1a" stroke-width=".9"/><path d="M10.7 ${ey} h2.6" stroke="#1a1a1a" stroke-width=".9"/><circle cx="8.6" cy="${ey}" r=".8" fill="#1a1a1a"/><circle cx="15.4" cy="${ey}" r=".8" fill="#1a1a1a"/>`;
+    if (mouth === 0) s += `<path d="M8.8 16.4 q3.2 2.6 6.4 0" stroke="#5a2a1a" stroke-width="1.1" fill="none" stroke-linecap="round"/>`;
+    if (mouth === 1) s += `<path d="M9.4 17 h5.2" stroke="#5a2a1a" stroke-width="1.1" stroke-linecap="round"/>`;
+    if (mouth === 2) s += `<ellipse cx="12" cy="17" rx="1.3" ry="1.1" fill="#5a2a1a"/>`;
+    return s + '</svg>';
+  }
+
+  // ---------- grouping ----------
+  const byStop = {};
+  for (const p of P) (byStop[p.stop] = byStop[p.stop] || []).push(p);
+  function groupsFor(st) {
+    if (st.id === 'finish') return [{ branch: 'Finished', papers: byStop.finish || [] }];
+    if (!st.gate || st.gate.pickup) return null;
+    const list = byStop[st.id] || [];
+    const order = st.gate.branches.slice();
+    for (const p of list) if (!order.includes(p.branch)) order.push(p.branch);
+    return order.map(b => ({ branch: b, papers: list.filter(p => p.branch === b) })).filter(g => g.papers.length);
+  }
+
+  // ---------- layout ----------
+  function penBox(groups, w) {
+    const cols = Math.max(1, Math.floor((w - 16 + GAP) / CELL));
+    let y = 30; const out = [];
+    for (const g of groups) {
+      const rows = Math.ceil(g.papers.length / cols);
+      const slots = g.papers.map((p, i) => ({ p, x: 8 + (i % cols) * CELL, y: y + 18 + Math.floor(i / cols) * CELL }));
+      out.push({ ...g, y, slots });
+      y += 18 + rows * CELL + 8;
+    }
+    if (!groups.length) y += 18;
+    return { groups: out, h: y + 4 };
+  }
+
+  function layout(W) {
+    const L = { W, stations: {}, pens: {}, horiz: W >= 760 };
+    if (L.horiz) {
+      const padL = 46, padR = 46, n = STATIONS.length;
+      const step = (W - padL - padR) / (n - 1);
+      L.trackY = 98; L.penTop = L.trackY + 22 + 38;
+      const penW = Math.min(step - 10, 240);
+      let bottom = L.penTop;
+      STATIONS.forEach((st, i) => {
+        const x = padL + i * step;
+        L.stations[st.id] = { x, y: L.trackY };
+        const groups = groupsFor(st);
+        if (groups) {
+          const box = penBox(groups, penW);
+          const px = Math.max(4, Math.min(W - 4 - penW, x - penW / 2));
+          L.pens[st.id] = { x: px, y: L.penTop, w: penW, h: box.h, groups: box.groups, entry: { x, y: L.penTop + 12 } };
+          bottom = Math.max(bottom, L.penTop + box.h);
+        }
+      });
+      L.H = bottom + 20;
+    } else {
+      L.trackX = 26;
+      let y = 22;
+      const penX = 54, penW = W - penX - 2;
+      STATIONS.forEach(st => {
+        L.stations[st.id] = { x: L.trackX, y };
+        const groups = groupsFor(st);
+        if (groups) {
+          const box = penBox(groups, penW);
+          L.pens[st.id] = { x: penX, y: y + 48, w: penW, h: box.h, groups: box.groups, entry: { x: L.trackX, y: y + 48 + 14 } };
+          y += 48 + box.h + 34;
+        } else {
+          y += st.gate && st.gate.pickup ? 84 : 70;
+        }
+      });
+      L.H = y;
+    }
+    return L;
+  }
+
+  // ---------- pass-through counts ----------
+  const ORDER = STATIONS.map(s => s.id);
+  const PASSED = {};
+  ORDER.forEach((id, k) => { PASSED[id] = id === 'start' ? P.length : P.filter(p => ORDER.indexOf(p.stop) > k).length; });
+  let chips = {};
+  const live = {};
+  function setChip(id, n) { if (chips[id]) chips[id].num.textContent = String(n); }
+  function resetChips() { ORDER.forEach(id => { live[id] = 0; setChip(id, id === 'start' ? PASSED.start : 0); }); }
+  function finalChips() { ORDER.forEach(id => setChip(id, PASSED[id])); }
+  function bump(id) {
+    live[id] = (live[id] || 0) + 1; setChip(id, live[id]);
+    const c = chips[id]; if (!c) return;
+    c.box.classList.add('bump'); clearTimeout(c.t); c.t = setTimeout(() => c.box.classList.remove('bump'), 220);
+  }
+
+  // ---------- drawing ----------
+  let L = null, runners = [], anims = [], timers = [];
+
+  function drawTrack() {
+    stage.innerHTML = '';
+    stage.style.height = L.H + 'px';
+    const first = L.stations.start, last = L.stations.finish;
+    if (L.horiz) {
+      const r = el('div', 'rail h', stage); Object.assign(r.style, { left: first.x - 24 + 'px', top: L.trackY - 22 + 'px', width: last.x - first.x + 48 + 'px', height: '44px' });
+    } else {
+      const r = el('div', 'rail v', stage); Object.assign(r.style, { left: L.trackX - 22 + 'px', top: first.y - 10 + 'px', width: '44px', height: last.y - first.y + 30 + 'px' });
+    }
+    STATIONS.forEach(st => {
+      const s = L.stations[st.id], pen = L.pens[st.id];
+      // gate stripe across the track
+      if (st.id === 'finish' || st.id === 'start') {
+        const c = el('div', st.id === 'finish' ? 'checker' : 'gate-line', stage);
+        if (L.horiz) Object.assign(c.style, { left: s.x - 4 + 'px', top: L.trackY - 22 + 'px', width: '8px', height: '44px' });
+        else Object.assign(c.style, { left: L.trackX - 22 + 'px', top: s.y - 4 + 'px', width: '44px', height: '8px' });
+      } else {
+        const c = el('div', 'gate-line', stage);
+        if (L.horiz) Object.assign(c.style, { left: s.x - 1.5 + 'px', top: L.trackY - 22 + 'px', width: '3px', height: '44px' });
+        else Object.assign(c.style, { left: L.trackX - 22 + 'px', top: s.y - 1.5 + 'px', width: '44px', height: '3px' });
+      }
+      // label
+      const lab = el('div', 'st-label', stage);
+      if (st.num) el('span', 'st-num', lab, String(st.num)).style.color = colorOf(st.id);
+      else el('span', 'st-num', lab, st.id === 'finish' ? '⚑' : '▶').style.color = st.id === 'finish' ? colorOf('finish') : 'var(--muted)';
+      el('span', 'st-name', lab, st.name);
+      el('span', 'st-note', lab, st.note);
+      if (L.horiz) {
+        const w = Math.min(150, (L.W - 92) / 6 - 6);
+        Object.assign(lab.style, { width: w + 'px', left: Math.max(0, Math.min(L.W - w, s.x - w / 2)) + 'px', top: '0px', textAlign: 'center' });
+      } else {
+        Object.assign(lab.style, { left: '54px', top: s.y - 12 + 'px', right: '0' });
+      }
+      // siding + pen
+      if (pen) {
+        const sd = el('div', 'siding', stage);
+        if (L.horiz) Object.assign(sd.style, { left: s.x - 8 + 'px', top: L.trackY + 22 + 'px', width: '16px', height: L.penTop - L.trackY - 22 + 'px' });
+        else Object.assign(sd.style, { left: L.trackX + 22 + 'px', top: pen.y + 8 + 'px', width: pen.x - L.trackX - 22 + 'px', height: '12px' });
+        const box = el('div', 'pen' + (st.id === 'finish' ? ' finish' : ''), stage);
+        Object.assign(box.style, { left: pen.x + 'px', top: pen.y + 'px', width: pen.w + 'px', height: pen.h + 'px' });
+        const head = el('div', 'pen-head', box);
+        const total = pen.groups.reduce((a, g) => a + g.papers.length, 0);
+        el('span', null, head, st.id === 'finish' ? 'reached the finish' : 'stopped here');
+        el('b', null, head, String(total));
+        if (!pen.groups.length) el('div', 'grp', box, 'Nobody stopped').style.cssText = 'left:8px;top:30px;color:var(--muted);font-weight:400';
+        pen.groups.forEach(g => {
+          const lab2 = el('div', 'grp', box);
+          lab2.style.left = '8px'; lab2.style.top = g.y + 'px'; lab2.style.color = colorOf(st.id);
+          el('span', null, lab2, g.branch); el('em', null, lab2, String(g.papers.length));
+        });
+      }
+    });
+    // how many runners moved on past each checkpoint
+    chips = {};
+    STATIONS.forEach(st => {
+      if (st.id === 'finish') return;
+      const s = L.stations[st.id];
+      const c = el('div', 'pass', stage);
+      const b = el('b', null, c, String(PASSED[st.id]));
+      el('span', null, c, st.id === 'start' ? 'at the start' : 'moved on');
+      c.title = st.id === 'start' ? `${PASSED.start} papers start` : `${PASSED[st.id]} of ${M.n} papers got past ${st.name}`;
+      if (L.horiz) Object.assign(c.style, { left: s.x + 12 + 'px', top: L.trackY + 28 + 'px' });
+      else Object.assign(c.style, { right: '0px', top: s.y - 12 + 'px' });
+      chips[st.id] = { box: c, num: b };
+    });
+    // pickup station note
+    GATES.filter(g => g.pickup).forEach(g => {
+      const s = L.stations[g.id];
+      const n = P.filter(p => (p.suppl || 0) > 0).length;
+      const t = el('div', 'st-note', stage, `${n} picked up files`);
+      t.style.position = 'absolute';
+      if (L.horiz) Object.assign(t.style, { left: s.x - 60 + 'px', width: '120px', textAlign: 'center', top: L.trackY + 54 + 'px' });
+      else Object.assign(t.style, { left: '54px', top: s.y + 42 + 'px', fontWeight: '600' });
+    });
+  }
+
+  function pathFor(p, i) {
+    const r = rng(hash(p.pmid) ^ 0x9e3779b9);
+    const jitter = (r() - 0.5) * 30;
+    const pts = [];
+    const ordered = STATIONS.map(s => s.id);
+    const stopIdx = ordered.indexOf(p.stop);
+    let slot = null;
+    const pen = L.pens[p.stop];
+    if (pen) for (const g of pen.groups) for (const s of g.slots) if (s.p === p) slot = { x: pen.x + s.x, y: pen.y + s.y };
+    for (let k = 0; k <= stopIdx; k++) {
+      const s = L.stations[ordered[k]];
+      if (L.horiz) pts.push({ x: s.x - AV / 2 + (k === 0 ? -r() * 14 : 0), y: L.trackY + jitter * 0.6 - AV / 2 });
+      else pts.push({ x: L.trackX + jitter * 0.4 - AV / 2, y: s.y - AV / 2 + (k === 0 ? -r() * 10 : 0) });
+    }
+    if (slot) {
+      if (L.horiz) pts.push({ x: pen.entry.x - AV / 2, y: pen.entry.y - AV / 2 });
+      else pts.push({ x: pen.entry.x - AV / 2, y: pen.entry.y - AV / 2 }, { x: pen.x + 4, y: pen.entry.y - AV / 2 });
+      pts.push(slot);
+    }
+    return { pts, speed: 0.17 + r() * 0.13, delay: r() * 1300 + (i % 7) * 30, passG3: stopIdx > ordered.indexOf('g3') };
+  }
+
+  function makeRunners() {
+    runners = P.map((p, i) => {
+      const b = el('button', 'runner', stage);
+      b.type = 'button';
+      b.innerHTML = face(p.pmid) + '<span class="clip"></span><span class="medal"></span>';
+      const st = STATIONS.find(s => s.id === p.stop);
+      b.setAttribute('aria-label', `PMID ${p.pmid}: ${p.stop === 'finish' ? 'finished' : 'stopped at ' + st.name + ', ' + p.branch}`);
+      b.addEventListener('mouseenter', () => showCard(p, b, false));
+      b.addEventListener('mouseleave', () => { if (!pinned) hideCard(); });
+      b.addEventListener('focus', () => showCard(p, b, false));
+      b.addEventListener('blur', () => { if (!pinned) hideCard(); });
+      b.addEventListener('click', e => { e.stopPropagation(); pinned = (pinned === p ? null : p); pinned ? showCard(p, b, true) : hideCard(); });
+      return { p, b, path: pathFor(p, i) };
+    });
+  }
+
+  function placeFinal() {
+    finalChips();
+    for (const r of runners) {
+      const end = r.path.pts[r.path.pts.length - 1];
+      r.b.style.transform = `translate(${end.x}px, ${end.y}px)`;
+      r.b.classList.remove('running');
+      r.b.classList.add('stopped');
+      r.b.classList.toggle('won', r.p.stop === 'finish');
+      r.b.classList.toggle('has-clip', (r.p.suppl || 0) > 0);
+    }
+  }
+
+  let raf = 0;
+  function clearAnims() { cancelAnimationFrame(raf); anims.forEach(a => a.cancel()); anims = []; timers.forEach(clearTimeout); timers = []; }
+
+  function run() {
+    clearAnims();
+    hideCard(); pinned = null;
+    if (reduce || !Element.prototype.animate) { placeFinal(); return; }
+    resetChips();
+    const watch = [];
+    for (const r of runners) {
+      const pts = r.path.pts;
+      let total = 0; const cum = [0];
+      for (let k = 1; k < pts.length; k++) { total += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y); cum.push(total); }
+      const duration = Math.max(400, total / r.path.speed);
+      const frames = pts.map((pt, k) => ({ transform: `translate(${pt.x}px, ${pt.y}px)`, offset: total ? cum[k] / total : k / Math.max(1, pts.length - 1) }));
+      r.b.classList.remove('stopped', 'won', 'has-clip');
+      r.b.style.transform = frames[0].transform;
+      const a = r.b.animate(frames, { duration, delay: r.path.delay, easing: 'linear', fill: 'both' });
+      anims.push(a);
+      // Events tied to the runner's own clock, so counts never run ahead of the runners
+      // (a background tab pauses the animations but not timers).
+      const events = [{ t: r.path.delay, fn: () => r.b.classList.add('running') }];
+      const stopIdx = ORDER.indexOf(r.p.stop);
+      for (let k = 1; k < stopIdx; k++) {  // point k of the path is station k
+        const id = ORDER[k];
+        events.push({ t: r.path.delay + duration * (cum[k] / total), fn: () => bump(id) });
+        if (id === 'g3' && (r.p.suppl || 0) > 0) events.push({ t: r.path.delay + duration * (cum[k] / total), fn: () => r.b.classList.add('has-clip') });
+      }
+      watch.push({ a, events, i: 0 });
+      a.finished.then(() => {
+        const end = pts[pts.length - 1];
+        r.b.style.transform = `translate(${end.x}px, ${end.y}px)`;
+        r.b.classList.remove('running');
+        r.b.classList.add('stopped');
+        r.b.classList.toggle('won', r.p.stop === 'finish');
+        r.b.classList.toggle('has-clip', (r.p.suppl || 0) > 0);
+      }).catch(() => {});
+    }
+    const tick = () => {
+      let pending = 0;
+      for (const w of watch) {
+        const now = w.a.currentTime ?? 0;
+        while (w.i < w.events.length && now >= w.events[w.i].t) w.events[w.i++].fn();
+        if (w.i < w.events.length && w.a.playState !== 'finished') pending++;
+      }
+      if (pending) raf = requestAnimationFrame(tick); else finalChips();
+    };
+    raf = requestAnimationFrame(tick);
+  }
+
+  // ---------- card ----------
+  let pinned = null;
+  function showCard(p, b, isPinned) {
+    runners.forEach(r => r.b.classList.toggle('sel', r.p === p && isPinned));
+    card.innerHTML = '';
+    const st = STATIONS.find(s => s.id === p.stop);
+    const where = el('div', 'where', card, p.stop === 'finish' ? 'Finished · SRA samples retrieved' : `Stopped at ${st.num ? st.num + ' ' : ''}${st.name} · ${p.branch}`);
+    where.style.color = colorOf(p.stop);
+    if (isPinned) { const c = el('button', 'close', card, '×'); c.type = 'button'; c.setAttribute('aria-label', 'Close'); c.onclick = e => { e.stopPropagation(); pinned = null; hideCard(); }; }
+    const h = el('h3', null, card);
+    const a = el('a', null, h, p.title || '(no title)'); a.href = `https://pubmed.ncbi.nlm.nih.gov/${p.pmid}/`; a.target = '_blank'; a.rel = 'noopener';
+    el('div', 'ids', card, [p.journal, p.year, 'PMID ' + p.pmid, p.pmc].filter(Boolean).join(' · '));
+    el('p', 'reason', card, p.reason);
+    const dl = el('dl', null, card);
+    const add = (k, v) => { if (v !== undefined && v !== null && v !== '') { el('dt', null, dl, k); el('dd', null, dl, String(v)); } };
+    if (p.stop === 'finish') {
+      add('Archive', p.accessions);
+      add('NCBI SRA', `${fmt(p.runs)} runs · ${fmt(p.biosamples)} BioSamples`);
+      add('Paper says', [p.sample_size && `${p.sample_size} participants`, p.n_cases && `${p.n_cases} cases`, p.n_controls && `${p.n_controls} controls`].filter(Boolean).join(' · '));
+      add('Library', p.strategies ? Object.entries(p.strategies).map(([k, v]) => `${k} ${v}`).join(', ') : '');
+      add('16S region', p.region);
+      add('Platform', p.platform || p.instrument);
+      add('Sample', p.sample_type);
+    }
+    if (p.suppl !== undefined) add('Supplements', p.suppl ? `${p.suppl} file${p.suppl > 1 ? 's' : ''} (${p.suppl_types})` : 'none');
+    if (!dl.children.length) dl.remove();
+    card.hidden = false;
+    // position near the avatar inside the stage
+    const sr = stage.getBoundingClientRect(), br = b.getBoundingClientRect();
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    let x = br.left - sr.left + 30, y = br.top - sr.top - 10;
+    if (x + cw > sr.width) x = br.left - sr.left - cw - 8;
+    x = Math.max(0, x);
+    if (y + ch > stage.offsetHeight + 120) y = Math.max(0, br.top - sr.top - ch + 20);
+    const stageTop = stage.offsetTop;
+    card.style.left = (stage.offsetLeft + x) + 'px';
+    card.style.top = (stageTop + y) + 'px';
+  }
+  function hideCard() { card.hidden = true; runners.forEach(r => r.b.classList.remove('sel')); }
+  document.addEventListener('click', e => { if (pinned && !card.contains(e.target)) { pinned = null; hideCard(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { pinned = null; hideCard(); } });
+
+  // ---------- header, tables ----------
+  function header() {
+    const fin = (byStop.finish || []).length;
+    document.getElementById('eyebrow').textContent = `paper-discover2sra · test run · ${M.date}`;
+    document.getElementById('headline').innerHTML = `${M.n} ${M.disease} papers race to the <span class="fin">SRA</span>`;
+    document.getElementById('lede').textContent =
+      `${M.n} papers drawn at random${M.pool ? ` from ${fmt(M.pool)} ${M.disease} records in Europe PMC` : ''}${M.seed != null ? ` (seed ${M.seed})` : ''}. ` +
+      `Each one runs the pipeline from abstract screening to the SRA sample lookup and stops at the first step it cannot pass. ` +
+      `Hover or tap a runner to see the paper and why it stopped.`;
+    const board = document.getElementById('board');
+    const stat = (v, l, cls) => { const s = el('div', 'stat' + (cls ? ' ' + cls : ''), board); el('b', null, s, v); el('span', null, s, l); };
+    stat(`${fin}/${M.n}`, 'reached the finish', 'finish');
+    stat(fmt(M.llm_calls), 'LLM calls');
+    stat(`$${Number(M.cost_usd).toFixed(2)}`, 'API-equivalent cost');
+    stat(`${M.elapsed_min} min`, 'run time');
+    const btn = el('button', 'replay', board, 'Replay race'); btn.type = 'button'; btn.id = 'replay';
+    btn.addEventListener('click', run);
+  }
+
+  function tables() {
+    const t = document.getElementById('stops');
+    t.innerHTML = '<thead><tr><th>Step / branch</th><th class="num">Stopped</th><th class="num">Moved on</th><th style="width:34%"></th></tr></thead>';
+    const tb = el('tbody', null, t);
+    const max = Math.max(...Object.values(byStop).map(a => a.length), 1);
+    const row = (label, n, moved, color, isGate) => {
+      const tr = el('tr', isGate ? 'gate-row' : null, tb);
+      el('td', null, tr, label); el('td', 'num', tr, String(n)); el('td', 'num', tr, moved == null ? '' : String(moved));
+      const td = el('td', null, tr);
+      if (!isGate && n) { const b = el('div', 'bar', td); b.style.width = (n / max * 100) + '%'; b.style.background = color; }
+    };
+    row('Start', '', PASSED.start, null, true);
+    GATES.forEach((g, i) => {
+      const list = byStop[g.id] || [];
+      if (g.pickup) {
+        row(`${i + 1} ${g.name}`, 0, PASSED[g.id], null, true);
+        row(' Picked up files on the way', P.filter(p => (p.suppl || 0) > 0).length, null, colorOf('g2'), false);
+        return;
+      }
+      row(`${i + 1} ${g.name}`, list.length, PASSED[g.id], null, true);
+      const branches = g.branches.concat([...new Set(list.map(p => p.branch))].filter(b => !g.branches.includes(b)));
+      branches.forEach(b => row(' ' + b, list.filter(p => p.branch === b).length, null, colorOf(g.id), false));
+    });
+    row('Finish: SRA samples retrieved', (byStop.finish || []).length, null, colorOf('finish'), false);
+
+    const f = document.getElementById('finishers');
+    const fins = byStop.finish || [];
+    if (!fins.length) { f.innerHTML = '<tbody><tr><td class="empty">No paper reached the finish in this run.</td></tr></tbody>'; return; }
+    f.innerHTML = '<thead><tr><th>Paper</th><th>Archive</th><th class="num">SRA runs</th><th class="num">Paper n</th><th>Region</th></tr></thead>';
+    const fb = el('tbody', null, f);
+    fins.slice().sort((a, b) => (b.runs || 0) - (a.runs || 0)).forEach(p => {
+      const tr = el('tr', null, fb);
+      const td = el('td', 'fin-title', tr);
+      const a = el('a', null, td, p.title); a.href = `https://pubmed.ncbi.nlm.nih.gov/${p.pmid}/`; a.target = '_blank'; a.rel = 'noopener';
+      el('div', 'mono', td, `${p.journal ? p.journal + ' · ' : ''}${p.year}`).style.color = 'var(--muted)';
+      el('td', 'mono', tr, (p.accessions || '').split(';').join(' '));
+      el('td', 'num', tr, fmt(p.runs || 0));
+      el('td', 'num', tr, p.sample_size || '–');
+      el('td', null, tr, p.region || '–');
+    });
+  }
+
+  function footer() {
+    const f = document.getElementById('foot');
+    el('p', null, f, 'Screening and reading were done by ' + M.model + '. Accessions named by the model were kept only if they appear word for word in the paper text. ' +
+      'Full text was fetched only for open-access papers in PubMed Central. "Paper n" is the number of participants the paper reports; SRA runs can be higher (several samples per person, or controls sequenced in other projects) or lower.');
+    el('p', null, f, 'Gold dot: reached the finish. Blue dot: supplementary files were downloaded at step 3.');
+  }
+
+  // ---------- boot ----------
+  let lastW = 0, started = false;
+  function build(animate) {
+    const W = stage.clientWidth;
+    lastW = W;
+    L = layout(W);
+    drawTrack();
+    makeRunners();
+    if (animate) run(); else placeFinal();
+  }
+  header(); tables(); footer();
+  build(true); started = true;
+  let rt;
+  new ResizeObserver(() => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      const W = stage.clientWidth;
+      if (!started || Math.abs(W - lastW) < 24) return;
+      clearAnims(); hideCard(); pinned = null; build(false);
+    }, 150);
+  }).observe(stage);
+})();
+</script>

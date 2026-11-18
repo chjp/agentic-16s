@@ -1,0 +1,21 @@
+PROJECT GOAL: a machine-learning model that tells IBD from healthy using a stool 16S test. Only
+studies that sequenced human stool can contribute.
+
+INCLUSION CRITERIA (ALL must be met):
+1. Studies human participants with inflammatory bowel disease (Crohn's disease and/or ulcerative colitis, including IBD-unclassified)
+2. Sequences human stool (fecal) samples. Studies that also sequence other sample types qualify for their stool samples.
+3. Characterizes the microbial community by 16S rRNA gene amplicon sequencing (studies that also do shotgun metagenomics are fine if 16S data is included)
+4. Original research article that collected and sequenced new samples
+Healthy controls in the same study are preferred but not required: stool from IBD patients alone (for example two treatment arms) is still included, because the pooled database compares it with controls from other studies.
+
+EXCLUSION CRITERIA (any one leads to exclusion):
+1. Animal models or in vitro studies only (no human samples sequenced)
+2. No stool samples: only mucosal biopsy, surgical or fistula tissue, saliva or other oral samples, blood, or other non-stool sites
+3. Reviews, meta-analyses, protocols, editorials, or opinion pieces
+4. Microbiome measured only by shotgun metagenomics, qPCR, culture, metabolomics, or other non-16S methods
+5. Re-analysis of public datasets only, with no new samples collected
+6. Case reports or studies with fewer than 10 participants
+7. IBD is not a studied group (e.g. irritable bowel syndrome, colorectal cancer, or celiac disease only)
+
+If the abstract does not say how the microbiome was measured, or does not say which sample type was
+sequenced, choose UNCERTAIN rather than EXCLUDE.
