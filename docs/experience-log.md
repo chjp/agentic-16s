@@ -461,8 +461,9 @@ memory and `gcp-migration.md` section 6, after the GCE batch had finished. They 
   - 36111238: resubmitted unchanged.
   - preflight: a mate file that yields no reads is now an error for that run, and a paired protocol
     with no R2 observations goes to `needs_review` instead of crashing (tests in `test_preflight.py`).
-  - Proposed, waiting for the owner: dump paired runs with `sra_source.fetch_split` (R1/R2 in ENA's
-    format) in preflight's quality fallback and in the fetch stage.
+  - Owner approved, done the same evening (commit "SRA-Lite fallback: dump paired runs from NCBI as R1
+    and R2"): preflight's quality fallback and the fetch stage use `sra_source.fetch_split` for paired
+    runs, keeping only `<run>_1/_2` (the unpaired-reads file `<run>.fastq.gz` would sort first).
 - **Scale-up note:**
   - A fallback path tested on one study type (454 single-end) is untested for the others; give
     each fallback a test per layout.
@@ -473,6 +474,36 @@ memory and `gcp-migration.md` section 6, after the GCE batch had finished. They 
 - **Evidence:** `~/agentic16s-data/batch/runs/a16s-37696680-20261117-222450/output/runner.log`,
   `.../a16s-36111238-20261117-221219/extracted/data/pipeline/36111238/main/fetchngs.stdout.log`,
   NCBI SDL for SRR23492472 (normalized .sra and the submitted R1/R2 FASTQ are both listed).
+
+### E23. A 1-bp shorter sequencing batch lost 98 % of its reads to truncation (2026-11-17, 36111238)
+
+- **Symptom:** the first full run (`a16s-36111238-20261117-223117`, 89.4 min, ~$0.41) passed every
+  stage, but the QC gate said `review`: 15 of 60 runs kept under 20 % of their reads in quality
+  filtering (SRR20914781 1 %, SRR20914777 1 %, ...).
+- **Cause (confirmed):**
+  - 46 runs are 2x301 and 14 are 2x300 (a second sequencing batch, AWGB16SAA211). Each read starts
+    with an 8-nt spacer, then the 19-nt primer, so R1 of a 2x300 run is 273 nt after cutadapt.
+  - ampliseq's automatic truncation follows the majority: `truncLen = c(274, 260)`
+    (`ampliseq/dada2/args/filterAndTrim.args.txt`).
+  - DADA2 drops every read shorter than truncLen: the 2x300 runs kept a median 2.2 % of their reads
+    in filtering, the 2x301 runs 60-66 %.
+  - The 14 short runs are 10 of the 20 healthy controls and 4 UC-in-remission, so the loss was
+    confounded with the comparison the study is about. The curation agent had already noted the
+    300/301 split; nothing in the pipeline used it.
+- **Cost (measured):** one full run that cannot be used as it is (89.4 VM min, ~$0.41), and about
+  30 min to trace.
+- **Fix:** preflight reads every run's length per mate from ENA (base_count / read_count, only runs
+  whose reads all have one length), finds the shortest batch (>= 3 runs or 5 %), and caps
+  `trunclenf/trunclenr` below what it reaches (largest spacer seen, 2-nt margin), unless that breaks
+  merging (then review). 36111238 now gets 271/257 for a 429-nt amplicon. A dry check on the other
+  six studies changes nothing. The paper's 338F (one base short of the catalog's) now matches, so
+  the merge check has an amplicon length. Rerun from preflight.
+- **Scale-up note:** an automatic setting chosen from the majority of a pooled study can silently
+  remove a minority batch, and batches often line up with groups (controls sequenced separately).
+  Any per-study parameter that discards reads needs a check against the shortest or worst batch,
+  not the median run. The QC gate's per-run retention check is what caught it.
+- **Evidence:** `studies/36111238/pipeline_qc.json`, `~/agentic16s-data/pipeline/36111238/main/tables/run_qc.tsv`,
+  `studies/36111238/sample_sheet.tsv` (`other_json.read_length_per_mate`).
 
 ---
 
