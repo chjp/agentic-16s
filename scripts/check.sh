@@ -114,6 +114,7 @@ run "ruff (bug rules)" uv_vm ruff check .
 run "syntax on Python $PY_MAC (Mac system Python)" syntax_check uv_mac
 run "syntax on Python $PY_VM (cloud VM)" syntax_check uv_vm
 run "JSON files parse" json_check
+run "failure taxonomy names real tests" python3 -I scripts/check_taxonomy.py
 run "no personal data in committed files" personal_data_check
 run "shellcheck" uv_vm shellcheck -S warning infra/*.sh infra/gcloud16s scripts/*.sh
 run "actionlint (GitHub workflows)" uv_vm actionlint .github/workflows/*.yml

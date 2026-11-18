@@ -35,3 +35,13 @@ def test_ordinary_runs_are_left_alone():
     r = run("PAIRED", orphan, R1, R2)
     assert ms.resolve_layout(r, {"layout": "PAIRED"}) == ("PAIRED", "")
     assert ms.pick_files(r) == [R1, R2]
+
+
+def test_protocol_select_keeps_only_the_runs_the_pipeline_can_process():
+    """42349924 mixes MiSeq and PacBio; 37696680 mixes its own patients with a biobank BioProject."""
+    protocols = [{"label": "main", "select": {"library_strategy": "AMPLICON", "instrument_model": "Illumina MiSeq",
+                                              "bioproject": "PRJNA935155"}}]
+    miseq = {"library_strategy": "AMPLICON", "instrument_model": "Illumina MiSeq", "bioproject": "PRJNA935155"}
+    assert ms.assign_protocol(miseq, protocols) == "main"
+    assert ms.assign_protocol({**miseq, "instrument_model": "Sequel II"}, protocols) is None
+    assert ms.assign_protocol({**miseq, "bioproject": "PRJNA280490"}, protocols) is None

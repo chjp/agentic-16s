@@ -24,6 +24,23 @@ were measured, sampled or estimated. Per-step resource use is written automatica
 `studies/<PMID>/resource_profile.json` by `pipeline/bin/resource_monitor.py`; summarize it with
 `python3 -I pipeline/bin/resource_monitor.py report`.
 
+## When a study shows a data problem the pipeline did not handle
+
+The pipeline should get more robust with every study. When new data breaks it or gives a wrong
+result:
+
+1. Decide whether the problem can recur in other studies. If so, handle it in code: detect it from
+   the data or the archive, act on it, and record what was done (manifest, `params.json` reasons,
+   log). Never guess silently; when the evidence is not enough, stop with `needs_review`. A truly
+   rare case only needs to end in `needs_review` or a QC flag.
+2. Add an offline regression test named after the case.
+3. Add a row to `docs/failure-taxonomy.md` (next Q-number: problem, first study, detection,
+   handling, tests, status). `scripts/check.sh` fails if a named test does not exist.
+4. Dry-check the change against the studies already processed and say what it changes.
+5. Write the commit so a reviewer understands it without the chat: the subject names the data
+   problem; the body gives Problem (study, numbers), Cause, Handling, Not affected (the dry check),
+   Tests, and the Q-number. If a run failed, also add the experience-log entry (E-number).
+
 ## Run the checks before you finish
 
 After changing code, run `scripts/check.sh` (about 20 s; `--fast` skips the ML tests) and fix what
