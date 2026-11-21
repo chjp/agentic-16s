@@ -1,0 +1,1175 @@
+<title>Inside the 16S Pipeline</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sora:wght@500;600;700&display=swap">
+<script>
+(function(){var l="zh";try{var s=localStorage.getItem("explainer-lang");if(s==="en"||s==="zh")l=s}catch(e){}document.documentElement.setAttribute("data-lang",l)})();
+</script>
+<style>
+/* Layout: one reading column of section cards that follow a read down the pipeline; each live demo sits in its own stage that scrolls sideways only when it must. */
+:root{
+  --bg:#eef2f1; --surface:#ffffff; --surface-2:#e4eae8; --line:#cfd9d6;
+  --ink:#13201c; --ink-2:#43524d; --ink-3:#73827d;
+  --accent:#0d7a6f; --accent-soft:#d5ece8;
+  --ok:#1b7f43; --warn:#b4610a; --bad:#bf2f2f;
+  --nA:#1f9d55; --nC:#2563c9; --nG:#c98a0b; --nT:#d23c3c;
+  --b1:#2f6fd0; --b2:#d9822b;
+  --font-display:"Sora",-apple-system,"PingFang SC","Hiragino Sans GB","Noto Sans SC",sans-serif;
+  --font-body:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1513; --surface:#16201d; --surface-2:#1e2a26; --line:#2d3a36;
+    --ink:#e5edea; --ink-2:#adbab5; --ink-3:#7d8b86;
+    --accent:#3cc6b4; --accent-soft:#16332f;
+    --ok:#5fcf8c; --warn:#eca553; --bad:#f07a72;
+    --nA:#4ccf80; --nC:#6b9cf0; --nG:#e9b63e; --nT:#f0716b;
+    --b1:#6b9cf0; --b2:#eca553;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1513; --surface:#16201d; --surface-2:#1e2a26; --line:#2d3a36;
+  --ink:#e5edea; --ink-2:#adbab5; --ink-3:#7d8b86;
+  --accent:#3cc6b4; --accent-soft:#16332f;
+  --ok:#5fcf8c; --warn:#eca553; --bad:#f07a72;
+  --nA:#4ccf80; --nC:#6b9cf0; --nG:#e9b63e; --nT:#f0716b;
+  --b1:#6b9cf0; --b2:#eca553;
+  color-scheme:dark;
+}
+:root[data-lang="en"] .zh{display:none!important}
+:root:not([data-lang="en"]) .en{display:none!important}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 var(--font-body)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--surface);border-bottom:1px solid var(--line);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top-in{max-width:1080px;margin:0 auto;display:flex;align-items:center;gap:14px;padding-block:8px}
+.brand{font:600 14px/1 var(--font-display);white-space:nowrap;letter-spacing:.01em}
+.jump{display:flex;gap:4px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none}
+.jump::-webkit-scrollbar{display:none}
+.jump a{font-size:12.5px;color:var(--ink-2);text-decoration:none;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.jump a:hover,.jump a:focus-visible{background:var(--surface-2);color:var(--ink)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:none}
+.seg button{font:500 12.5px/1 var(--font-body);padding:6px 10px;border:0;background:transparent;color:var(--ink-2);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+:root[data-theme="dark"] .seg button[aria-pressed="true"]{color:#06201c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .seg button[aria-pressed="true"]{color:#06201c}}
+main{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 72px}
+h1{font:700 clamp(26px,4.2vw,40px)/1.15 var(--font-display);letter-spacing:-.015em;margin:6px 0 10px;text-wrap:balance}
+h2{font:600 clamp(19px,2.4vw,24px)/1.3 var(--font-display);margin:0 0 6px;text-wrap:balance}
+h3{font:600 15.5px/1.4 var(--font-display);margin:0 0 6px}
+.eyebrow{font:500 11.5px/1 var(--font-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--accent);margin:0 0 8px}
+.lead{color:var(--ink-2);max-width:68ch;margin:0 0 14px;font-size:16px}
+p{margin:0 0 10px;max-width:72ch}
+.muted{color:var(--ink-3);font-size:13px}
+.mono{font-family:var(--font-mono)}
+code{font:12.5px/1.4 var(--font-mono);background:var(--surface-2);padding:1px 5px;border-radius:4px}
+section.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 22px 20px;margin:22px 0;scroll-margin-top:64px}
+@media (max-width:560px){section.card{padding:18px 14px 16px;border-radius:12px}}
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0 4px}
+@media (max-width:820px){.three{grid-template-columns:1fr}}
+.three div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.three b{display:block;font:600 13px/1.3 var(--font-mono);color:var(--accent);margin-bottom:4px}
+.stage{overflow-x:auto;margin:12px 0 6px;border-radius:10px;background:var(--surface-2);position:relative}
+.stage canvas,.stage svg{display:block}
+.narr{min-height:50px;padding:9px 13px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0;margin:10px 0;font-size:14px;max-width:none}
+.ctrl{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:10px 0}
+.ctrl label{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink-2)}
+.ctrl output{font:500 13px var(--font-mono);color:var(--ink);min-width:3.5em}
+input[type=range]{accent-color:var(--accent);width:150px}
+select{font:inherit;font-size:13px;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+button.btn{font:500 13px/1 var(--font-body);padding:8px 13px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+button.btn:hover{border-color:var(--ink-3)}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] button.btn.primary{color:#06201c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) button.btn.primary{color:#06201c}}
+button.btn[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stats{display:flex;flex-wrap:wrap;gap:10px 26px;margin:8px 0 4px}
+.stat b{display:block;font:600 21px/1.2 var(--font-mono);font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--ink-3)}
+.good{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+.formula{font:13px/1.7 var(--font-mono);background:var(--surface-2);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:nowrap;margin:8px 0}
+.cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px}
+@media (max-width:820px){.cols{grid-template-columns:1fr}}
+.cols>div{min-width:0}
+.stations{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
+.stations button{text-align:left;font:13px/1.35 var(--font-body);padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;display:flex;gap:8px;align-items:flex-start}
+.stations button .n{font:600 11.5px/1.6 var(--font-mono);color:var(--ink-3);flex:none}
+.stations button.cur{border-color:var(--accent);background:var(--accent-soft)}
+.stations button.sel{box-shadow:inset 0 0 0 2px var(--accent)}
+.detail{margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface)}
+.detail dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 14px;margin:8px 0 0}
+.detail dt{font-size:12.5px;color:var(--ink-3);padding-top:2px}
+.detail dd{margin:0;font-size:14px}
+@media (max-width:560px){.detail dl{grid-template-columns:1fr}.detail dt{padding-top:6px}}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;gap:6px;align-items:baseline;font-size:12.5px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);background:var(--surface-2)}
+.chip b{font:600 11.5px var(--font-mono);color:var(--bad)}
+.chip.ok b{color:var(--ok)}
+.pill{display:inline-block;font:600 11px/1.6 var(--font-mono);padding:0 8px;border-radius:99px;letter-spacing:.03em}
+.pill.pass{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.pill.review{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);padding:4px 8px;border-radius:6px;font-size:12px;white-space:nowrap;z-index:5}
+.seqbox{font:13px/1.65 var(--font-mono);background:var(--surface-2);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:pre}
+.seqbox .A{color:var(--nA)} .seqbox .C{color:var(--nC)} .seqbox .G{color:var(--nG)} .seqbox .T{color:var(--nT)}
+.seqbox .pr{color:var(--ink-3);text-decoration:line-through}
+.seqbox .hl{background:color-mix(in srgb,var(--bad) 22%,transparent);border-radius:3px}
+.wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:12px}
+.study{border:1px solid var(--line);border-radius:12px;padding:13px 14px;background:var(--surface)}
+.study h3{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-family:var(--font-mono);font-size:15px}
+.study .meta{font-size:12.5px;color:var(--ink-3);margin-bottom:6px}
+.study ul{margin:0;padding-left:18px;font-size:13.5px}
+.study li{margin:3px 0}
+.study .ids{font:500 11.5px var(--font-mono);color:var(--bad)}
+.strat{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:12px}
+.strat article{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.strat svg{width:100%;height:64px;display:block}
+.strat dl{margin:0;display:grid;gap:5px}
+.strat dt{font-size:11.5px;font-weight:600;color:var(--ink-3);letter-spacing:.05em;text-transform:uppercase}
+.strat dd{margin:0 0 4px;font-size:13.5px}
+.catbar{display:flex;height:40px;border-radius:9px;overflow:hidden;margin:12px 0 8px;border:1px solid var(--line)}
+.catbar button{border:0;cursor:pointer;font:600 12px/1.2 var(--font-mono);color:#fff;display:flex;align-items:center;justify-content:center;padding:0 4px;min-width:0;overflow:hidden}
+.catbar button[aria-pressed="true"]{box-shadow:inset 0 0 0 3px var(--ink)}
+.catlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px 14px;font-size:13.5px;margin:6px 0 0;padding:0;list-style:none}
+.catlist li b{font:600 12px var(--font-mono);margin-right:6px}
+.qs{display:grid;gap:10px;margin-top:10px;padding:0;list-style:none}
+.qs li{border-left:3px solid var(--accent);padding:4px 0 4px 14px;font-size:15.5px;max-width:78ch}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--ink-2);margin:6px 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.foot{font-size:12.5px;color:var(--ink-3);margin-top:34px;max-width:80ch}
+.foot li{margin:3px 0}
+.lanes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:14px 0 6px}
+@media (max-width:760px){.lanes{grid-template-columns:1fr}}
+.lane{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--surface)}
+.lane h3{display:flex;gap:8px;align-items:center}
+.lane h3 i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.lane ol{margin:6px 0 0;padding:0;list-style:none;display:grid;gap:6px}
+.lane li{font-size:13.5px;padding:6px 10px;border-radius:8px;background:var(--surface-2);position:relative}
+.lane li b{font:600 12px var(--font-mono)}
+.lane li.key{box-shadow:inset 3px 0 0 var(--accent)}
+.lane li.end{background:var(--accent-soft)}
+.twolist{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:10px}
+@media (max-width:820px){.twolist{grid-template-columns:1fr}}
+.twolist div{border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.twolist h3{font-size:14px}
+.twolist ul{margin:0;padding-left:18px;font-size:13.5px}
+.twolist li{margin:4px 0}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <span class="brand">Inside the 16S Pipeline</span>
+    <nav class="jump" aria-label="sections">
+      <a href="#journey"><span class="zh">旅程</span><span class="en">Journey</span></a>
+      <a href="#gene"><span class="zh">基因地图</span><span class="en">Gene map</span></a>
+      <a href="#quality"><span class="zh">质量分数</span><span class="en">Quality</span></a>
+      <a href="#trunc"><span class="zh">截断</span><span class="en">Truncation</span></a>
+      <a href="#dada"><span class="zh">去噪</span><span class="en">Denoising</span></a>
+      <a href="#taxa"><span class="zh">分类</span><span class="en">Taxonomy</span></a>
+      <a href="#bias"><span class="zh">跨研究</span><span class="en">Across studies</span></a>
+      <a href="#field"><span class="zh">领域做法</span><span class="en">The field</span></a>
+      <a href="#blast"><span class="zh">BLAST 路线</span><span class="en">BLAST route</span></a>
+      <a href="#ours"><span class="zh">我们的 8 个研究</span><span class="en">Our 8 studies</span></a>
+      <a href="#think"><span class="zh">问题</span><span class="en">Questions</span></a>
+    </nav>
+    <div class="seg" role="group" aria-label="language">
+      <button id="langZh" type="button">中文</button><button id="langEn" type="button">EN</button>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ============ HERO ============ -->
+<div id="journey" style="scroll-margin-top:64px">
+  <p class="eyebrow"><span class="zh">QIIME 2 · DADA2 · nf-core/ampliseq</span><span class="en">QIIME 2 · DADA2 · nf-core/ampliseq</span></p>
+  <h1><span class="zh">一条 read 的旅程</span><span class="en">A read's journey</span></h1>
+  <p class="lead zh">16S 扩增子流程每一步在做什么、对数据有什么假设，以及面对来自不同实验室、不同测序仪的几十个研究时，这些假设是怎样一个个被打破的。nf-core/ampliseq 就是把 DADA2 这些工具包装成一条流程。所有例子都来自本项目已经跑过的 8 个 IBD 研究。</p>
+  <p class="lead en">What each step of the 16S amplicon pipeline does, what it assumes about the data, and how those assumptions broke one by one when dozens of studies from different labs and sequencers came in. nf-core/ampliseq is DADA2 and friends wrapped into one workflow. Every example comes from the eight IBD studies this project has already processed.</p>
+
+  <div class="three">
+    <div><b>1 · DADA2</b><span class="zh">核心是 DADA2：把每条 read 截成同样长度，再用统计检验区分“真实的序列变体（ASV）”和“测序错误”。</span><span class="en">The core is DADA2: it cuts every read to the same length, then uses a statistical test to tell real sequence variants (ASVs) from sequencing errors.</span></div>
+    <div><b>2 · <span class="zh">假设</span><span class="en">assumptions</span></b><span class="zh">这个检验需要几个前提：质量分数是真的、reads 一样长、引物和方向已知、同一批测序。公共数据库里的研究经常不满足。</span><span class="en">The test needs a few things to be true: real quality scores, equal read lengths, known primers and orientation, one sequencing batch. Public studies often break them.</span></div>
+    <div><b>3 · <span class="zh">跨研究</span><span class="en">across studies</span></b><span class="zh">不同研究测的是基因的不同片段，ASV 一个也对不上，最后只能退回到属水平比较。</span><span class="en">Studies sequence different parts of the gene, so not one ASV matches between them, and the comparison falls back to genus level.</span></div>
+  </div>
+
+  <section class="card" aria-labelledby="h-journey" style="margin-top:18px">
+    <p class="eyebrow"><span class="zh">动画 · 点任意一站看细节</span><span class="en">Animation · click any station for details</span></p>
+    <h2 id="h-journey"><span class="zh">流水线上的 11 站</span><span class="en">Eleven stations on the line</span></h2>
+    <div class="stage"><canvas id="heroCv" aria-label="animated pipeline"></canvas></div>
+    <div class="ctrl">
+      <button class="btn primary" id="heroPlay" type="button"><span class="zh">暂停</span><span class="en">Pause</span></button>
+      <span class="muted"><span class="zh">格子颜色 = 碱基（A 绿、C 蓝、G 黄、T 红），灰色 = 引物，淡色 = 低质量的尾巴，下面的小柱 = 质量分数。</span><span class="en">Cell colors are bases (A green, C blue, G amber, T red); grey is primer, faded is the low-quality tail, the small bars below are quality scores.</span></span>
+    </div>
+    <div class="narr" id="heroNarr"></div>
+    <div class="stations" id="heroStations"></div>
+    <div class="detail" id="heroDetail"></div>
+  </section>
+</div>
+
+<!-- ============ GENE MAP ============ -->
+<section class="card" id="gene" aria-labelledby="h-gene">
+  <p class="eyebrow"><span class="zh">基因地图</span><span class="en">Gene map</span></p>
+  <h2 id="h-gene"><span class="zh">每个研究只看 16S 基因的一小段</span><span class="en">Each study looks at a small window of the 16S gene</span></h2>
+  <p class="zh">16S rRNA 基因约 1,540 个碱基，保守区和 9 个可变区（V1–V9）交替排列。引物结合在保守区，扩增出中间的可变区。不同研究选的引物不同，看到的就是基因的不同窗口。下面是我们 8 个研究的窗口（E. coli 坐标，可变区位置为近似值）。把鼠标放在一行上看细节。</p>
+  <p class="en">The 16S rRNA gene is about 1,540 bases long, with conserved stretches alternating with nine variable regions (V1–V9). Primers bind the conserved stretches and amplify the variable region between them. Different studies chose different primers, so each sees a different window of the gene. Below are the windows of our eight studies (E. coli coordinates; variable-region positions are approximate). Hover over a row for details.</p>
+  <div class="stage"><svg id="geneSvg" viewBox="0 0 1000 420" style="min-width:760px;width:100%" role="img" aria-label="16S gene map with study windows"></svg></div>
+  <div class="detail" id="geneDetail"></div>
+  <h3 style="margin-top:16px"><span class="zh">为什么两个 V3–V4 研究连一个 ASV 都对不上</span><span class="en">Why two V3–V4 studies do not share a single ASV</span></h3>
+  <p class="zh">ASV 是精确的字符串，差一个字母就是另一个 ASV。35756051 用 785R，37661264 用 806R，两个反向引物在基因上差 2 个碱基。切掉引物以后，同一个细菌的序列一个以 <code>…GCAAACA</code> 结尾，另一个以 <code>…GCAAACAGG</code> 结尾。</p>
+  <p class="en">An ASV is an exact string; one letter more and it is a different ASV. 35756051 used 785R and 37661264 used 806R, and the two reverse primers sit 2 bases apart on the gene. After primer removal, the same bacterium's sequence ends in <code>…GCAAACA</code> in one study and <code>…GCAAACAGG</code> in the other.</p>
+  <div class="seqbox" id="endBox"></div>
+  <p class="muted"><span class="zh">这就是 <code>ml-results.md</code> 里“任意两个研究之间 0 个共享 ASV”的原因之一，跨研究模型只好用属。</span><span class="en">This is one reason <code>ml-results.md</code> found zero ASVs shared between any two studies, so the cross-study model uses genera.</span></p>
+</section>
+
+<!-- ============ QUALITY ============ -->
+<section class="card" id="quality" aria-labelledby="h-q">
+  <p class="eyebrow"><span class="zh">FASTQ · 质量分数</span><span class="en">FASTQ · quality scores</span></p>
+  <h2 id="h-q"><span class="zh">每个碱基都带着一句“我有多可信”</span><span class="en">Every base comes with a note on how far to trust it</span></h2>
+  <p class="zh">FASTQ 的每条 read 有四行：名字、序列、加号、质量。质量分数 Q = −10·log<sub>10</sub>(p)，p 是这个碱基读错的概率：Q30 表示千分之一，Q20 表示百分之一。DADA2 用它们做两件事：算每条 read 的“预期错误数” EE（第 3 节），以及学错误模型（第 4 节）。</p>
+  <p class="en">Each FASTQ read has four lines: name, sequence, a plus sign, and quality. A quality score is Q = −10·log<sub>10</sub>(p), where p is the chance that the base is wrong: Q30 means one in a thousand, Q20 one in a hundred. DADA2 uses them twice: to compute each read's expected errors EE (section 3), and to learn the error model (section 4).</p>
+  <div class="ctrl" role="group" aria-label="quality mode">
+    <button class="btn" type="button" data-qmode="real" aria-pressed="true"><span class="zh">真实 MiSeq</span><span class="en">Real MiSeq</span></button>
+    <button class="btn" type="button" data-qmode="lite"><span class="zh">SRA Lite：全部换成同一个值</span><span class="en">SRA Lite: all set to one value</span></button>
+    <button class="btn" type="button" data-qmode="binned"><span class="zh">分箱：只剩 4 个值</span><span class="en">Binned: only 4 values</span></button>
+  </div>
+  <div class="seqbox" id="fastqBox"></div>
+  <div class="cols">
+    <div>
+      <div class="stage"><canvas id="qCv" aria-label="quality scores per position"></canvas></div>
+      <p class="muted"><span class="zh">每根柱子是一个碱基的 Q 值（悬停看数值）。</span><span class="en">Each bar is one base's Q value (hover for numbers).</span></p>
+    </div>
+    <div>
+      <div class="stage"><canvas id="qErrCv" aria-label="what the error model can learn"></canvas></div>
+      <p class="muted"><span class="zh">错误模型要在这些点之间画一条“质量分数 → 错误率”的曲线。</span><span class="en">The error model has to draw a "quality score → error rate" curve through these points.</span></p>
+    </div>
+  </div>
+  <div class="narr" id="qNarr"></div>
+</section>
+
+<!-- ============ TRUNCATION ============ -->
+<section class="card" id="trunc" aria-labelledby="h-t">
+  <p class="eyebrow"><span class="zh">filterAndTrim · mergePairs</span><span class="en">filterAndTrim · mergePairs</span></p>
+  <h2 id="h-t"><span class="zh">截断实验室：悬崖在哪里</span><span class="en">Truncation lab: where the cliff is</span></h2>
+  <p class="zh">DADA2 要求所有 reads 一样长，所以先把 R1 截到 truncF、R2 截到 truncR。<b>比截断长度短的 read 整条丢掉</b>，这是悬崖。截完后再算 EE = Σ10<sup>−Q/10</sup>，超过 maxEE 的也丢掉；尾巴质量差，截得越长 EE 越大，这是斜坡。最后 R1 和 R2 要在中间重叠至少 12 nt 才能拼起来。每个点是一个 run（模拟数据）。</p>
+  <p class="en">DADA2 needs every read to be the same length, so R1 is cut to truncF and R2 to truncR. <b>A read shorter than the cut is dropped whole</b>: that is a cliff. Then EE = Σ10<sup>−Q/10</sup> is computed and reads above maxEE are dropped too; the tail is poor, so the longer the cut, the larger the EE: that is a slope. Finally R1 and R2 must overlap by at least 12 nt to merge. Each dot is one run (simulated data).</p>
+  <div class="ctrl" role="group" aria-label="scenario">
+    <button class="btn" type="button" data-scen="A" aria-pressed="true"><span class="zh">场景 A：像 36111238（两个批次）</span><span class="en">Scenario A: like 36111238 (two batches)</span></button>
+    <button class="btn" type="button" data-scen="B"><span class="zh">场景 B：像 35756051（R2 质量差）</span><span class="en">Scenario B: like 35756051 (poor R2)</span></button>
+  </div>
+  <div class="ctrl">
+    <label>truncF <input type="range" id="tF" min="150" max="290" step="1"><output id="tFo"></output></label>
+    <label>truncR <input type="range" id="tR" min="120" max="290" step="1"><output id="tRo"></output></label>
+    <label>maxEE <input type="range" id="tE" min="0.5" max="6" step="0.5"><output id="tEo"></output></label>
+  </div>
+  <div class="ctrl" id="tPresets"></div>
+  <div class="stage"><canvas id="tCv" aria-label="retention per run"></canvas></div>
+  <div class="legend" id="tLegend"></div>
+  <div class="stage" style="background:transparent"><canvas id="tOv" aria-label="read overlap"></canvas></div>
+  <div class="stats" id="tStats"></div>
+  <div class="narr" id="tNarr"></div>
+</section>
+
+<!-- ============ DADA2 ============ -->
+<section class="card" id="dada" aria-labelledby="h-d">
+  <p class="eyebrow"><span class="zh">learnErrors · dada</span><span class="en">learnErrors · dada</span></p>
+  <h2 id="h-d"><span class="zh">DADA2 的核心：这是新序列，还是测序错误？</span><span class="en">The core of DADA2: a new variant, or a sequencing error?</span></h2>
+  <p class="zh">下面真的在浏览器里跑 DADA2 的核心算法（简化版：60 nt、只有替换错误）。我们放进 5 个真实序列（A 40,000 条，B 8,000，C 600，D 60，E 80；C 和 E 与 A 只差 1 个碱基），模拟测序错误后得到几千种不同的序列。DADA2 从最多的序列开始，一个个问：<b>如果它只是某个更多的序列的测序错误，预计会出现 μ 条；实际有 a 条。a 远大于 μ 吗？</b></p>
+  <p class="en">This runs the core of the DADA2 algorithm in your browser (simplified: 60 nt, substitution errors only). We put in five real sequences (A 40,000 reads, B 8,000, C 600, D 60, E 80; C and E differ from A by one base), simulate sequencing errors, and get a few thousand distinct sequences. DADA2 starts from the most abundant one and asks of each in turn: <b>if this were only a sequencing error of a more abundant sequence, we would expect μ copies; we see a. Is a far above μ?</b></p>
+  <div class="formula">λ = Π<sub>pos</sub> (<span class="zh">相同</span><span class="en">match</span> ? 1−e<sub>pos</sub> : e<sub>pos</sub>/3) &nbsp;·&nbsp; μ = n<sub>center</sub> · λ &nbsp;·&nbsp; p = P(X ≥ a | X ≥ 1), X ~ Poisson(μ) &nbsp;·&nbsp; <span class="zh">p &lt; Ω<sub>A</sub> → 新 ASV</span><span class="en">p &lt; Ω<sub>A</sub> → new ASV</span></div>
+  <div class="ctrl">
+    <label><span class="zh">错误模型</span><span class="en">Error model</span>
+      <select id="dMode">
+        <option value="honest"></option>
+        <option value="flat"></option>
+      </select>
+    </label>
+    <label><span class="zh">read 末端错误率</span><span class="en">Error rate at the read end</span> <input type="range" id="dTail" min="1" max="6" step="0.5"><output id="dTailo"></output></label>
+    <label>Ω<sub>A</sub> = 10^<input type="range" id="dOmega" min="-80" max="-5" step="1"><output id="dOmegao"></output></label>
+  </div>
+  <div class="ctrl">
+    <button class="btn primary" id="dRun" type="button"><span class="zh">▶ 运行</span><span class="en">▶ Run</span></button>
+    <button class="btn" id="dStep" type="button"><span class="zh">单步</span><span class="en">Step</span></button>
+    <button class="btn" id="dReset" type="button"><span class="zh">重来</span><span class="en">Reset</span></button>
+    <button class="btn" id="dReseq" type="button"><span class="zh">重新测序</span><span class="en">Sequence again</span></button>
+  </div>
+  <div class="stage"><canvas id="dCv" aria-label="partitions of unique sequences"></canvas></div>
+  <div class="legend" id="dLegend"></div>
+  <div class="stats" id="dStats"></div>
+  <div class="narr" id="dNarr"></div>
+  <p class="muted zh">真实的 DADA2 按碱基替换类型 × 质量分数学错误率，每个测序批次单独学（我们的 samplesheet 从 read 名字里的 flowcell 读出批次，填进 <code>run</code> 列）。默认 <code>pool = FALSE</code> 每个样本单独推断；<code>pooled</code> 把所有样本合起来，能找到更稀有的变体，但 37661264 每个方向要 1 小时 45 分钟（E11），所以我们改用 <code>pseudo</code>。</p>
+  <p class="muted en">Real DADA2 learns error rates per substitution type × quality score, separately for each sequencing batch (our samplesheet reads the flowcell from the read names into the <code>run</code> column). By default each sample is inferred on its own; <code>pooled</code> combines all samples and finds rarer variants, but took 1 h 45 min per read direction for 37661264 (E11), so we use <code>pseudo</code>.</p>
+</section>
+
+<!-- ============ TAXONOMY ============ -->
+<section class="card" id="taxa" aria-labelledby="h-x">
+  <p class="eyebrow"><span class="zh">removeBimeraDenovo · assignTaxonomy</span><span class="en">removeBimeraDenovo · assignTaxonomy</span></p>
+  <h2 id="h-x"><span class="zh">嵌合体，和给序列起名字</span><span class="en">Chimeras, and putting a name on a sequence</span></h2>
+  <div class="cols">
+    <div>
+      <h3><span class="zh">PCR 换模板造出的“拼接怪”</span><span class="en">A hybrid made by PCR switching templates</span></h3>
+      <p class="zh">PCR 时聚合酶可能复制到一半掉下来，下一轮接到另一个细菌的模板上继续，得到“前半段 A + 后半段 B”的序列。removeBimeraDenovo 检查每个 ASV：能不能由两个更多的 ASV 左右拼出来？能就删掉。</p>
+      <p class="en">During PCR the polymerase can fall off halfway and, in the next cycle, continue on another bacterium's template, giving a sequence that is "first half A, second half B". removeBimeraDenovo checks each ASV: can it be built from the left of one more abundant ASV and the right of another? If so, it goes.</p>
+      <div class="stage"><canvas id="chiCv" aria-label="chimera formation"></canvas></div>
+      <button class="btn" id="chiPlay" type="button"><span class="zh">再放一次</span><span class="en">Play again</span></button>
+    </div>
+    <div>
+      <h3><span class="zh">朴素贝叶斯：k-mer 投票</span><span class="en">Naive Bayes: k-mers vote</span></h3>
+      <p class="zh">assignTaxonomy（RDP 方法）把序列拆成所有 8 个碱基长的小段（8-mer），看它们更像哪个属。为了给出置信度，它重复 100 次：每次随机抽 1/8 的 8-mer 重新投票。100 次里至少 50 次投给同一个属（minBoot 50），才写上属名，否则只写到科。</p>
+      <p class="en">assignTaxonomy (the RDP method) breaks a sequence into every 8-base word (8-mer) and asks which genus they look like. To get a confidence it repeats this 100 times, each time voting with a random 1/8 of the words. Only when at least 50 of the 100 votes agree (minBoot 50) does it write the genus; otherwise it stops at family.</p>
+      <div class="ctrl">
+        <label><span class="zh">两个属全长差几个碱基</span><span class="en">Bases that differ between the two genera (full length)</span> <input type="range" id="bDiv" min="2" max="60" step="1"><output id="bDivo"></output></label>
+      </div>
+      <div class="ctrl">
+        <label><span class="zh">测序窗口</span><span class="en">Sequenced window</span> <select id="bWin"></select></label>
+        <button class="btn primary" id="bRun" type="button"><span class="zh">▶ 跑 100 次 bootstrap</span><span class="en">▶ Run 100 bootstraps</span></button>
+      </div>
+    </div>
+  </div>
+  <div class="stage"><canvas id="bCv" aria-label="bootstrap votes"></canvas></div>
+  <div class="stage"><canvas id="bBars" aria-label="bootstrap confidence by window"></canvas></div>
+  <div class="narr" id="bNarr"></div>
+  <p class="muted"><span class="zh">简化版：只有两个属，没有测序错误。真实的分类器同时比较几千个属。之后 addSpecies 用完全匹配补到种，它在 37661264 上每块要 15–17 GB 内存、总共约 5 小时（E14），所以新研究跳过这一步。</span><span class="en">Simplified: only two genera and no sequencing errors; the real classifier compares thousands of genera at once. After this, addSpecies adds species by exact matching. On 37661264 it needed 15–17 GB per chunk and about 5 hours in all (E14), so new studies skip it.</span></p>
+</section>
+
+<!-- ============ BIAS ============ -->
+<section class="card" id="bias" aria-labelledby="h-b">
+  <p class="eyebrow"><span class="zh">ASV 表 → 跨研究比较</span><span class="en">ASV table → comparison across studies</span></p>
+  <h2 id="h-b"><span class="zh">同一份粪便，三种方案，三个答案</span><span class="en">One stool sample, three protocols, three answers</span></h2>
+  <p class="zh">每种方案（引物、区域、DNA 提取、平台）对每个细菌的“放大倍数”不同（McLaren 等 2019）。看相对丰度，三种方案对同一个样本给出不同的组成。看 CLR（对数比），方案的影响变成每个属一个固定的偏移：同一研究里健康和 IBD 之间的差别不变。示意数据。</p>
+  <p class="en">Each protocol (primers, region, DNA extraction, platform) amplifies each bacterium by its own factor (McLaren et al. 2019). In relative abundance, three protocols give three different pictures of the same sample. In CLR (log-ratios), the protocol becomes one fixed offset per genus: the difference between healthy and IBD inside a study stays the same. Illustrative numbers.</p>
+  <div class="ctrl" role="group" aria-label="scale">
+    <button class="btn" type="button" data-bscale="rel" aria-pressed="true"><span class="zh">相对丰度</span><span class="en">Relative abundance</span></button>
+    <button class="btn" type="button" data-bscale="clr">CLR</button>
+    <label><span class="zh">看哪个属</span><span class="en">Genus</span> <select id="biasGenus"></select></label>
+  </div>
+  <div class="cols">
+    <div><div class="stage"><canvas id="biasBars" aria-label="composition per protocol"></canvas></div></div>
+    <div><div class="stage"><canvas id="biasSlope" aria-label="healthy vs IBD per protocol"></canvas></div></div>
+  </div>
+  <h3 style="margin-top:14px"><span class="zh">固定阈值会失败，研究内的排序不会，除非偏移和标签重合</span><span class="en">A fixed threshold fails; ranking within a study does not, unless the offset lines up with the label</span></h3>
+  <p class="zh">两个研究，每个 20 个对照、20 个病例。研究 2 的方案让所有样本的失调分数整体偏高。用研究 1 定的阈值去判研究 2，很多对照被判成 IBD；但在研究 2 内部排序（AUROC）依然很好。打开下面的开关，看 42349924 的情况：对照在另一家医院、另一个批次测序。</p>
+  <p class="en">Two studies, each with 20 controls and 20 cases. Study 2's protocol shifts every sample's dysbiosis score up. A threshold set on study 1 calls many of study 2's controls IBD, yet ranking inside study 2 (AUROC) still works. Flip the switch below for the 42349924 situation: controls sequenced at another hospital, in another batch.</p>
+  <div class="ctrl">
+    <button class="btn" type="button" id="biasCtl" aria-pressed="false"><span class="zh">研究 2 的对照在别处测序</span><span class="en">Study 2's controls sequenced elsewhere</span></button>
+  </div>
+  <div class="stage"><canvas id="biasDots" aria-label="scores of two studies"></canvas></div>
+  <div class="stats" id="biasStats"></div>
+</section>
+
+<!-- ============ FIELD ============ -->
+<section class="card" id="field" aria-labelledby="h-f">
+  <p class="eyebrow"><span class="zh">这个领域怎么应对异质性</span><span class="en">How the field copes with heterogeneity</span></p>
+  <h2 id="h-f"><span class="zh">五种常见做法，各自修好了什么、漏掉了什么</span><span class="en">Five common approaches: what each fixes and what it misses</span></h2>
+  <div class="strat" id="stratGrid"></div>
+</section>
+
+<!-- ============ BLAST ROUTE (SMDI) ============ -->
+<section class="card" id="blast" aria-labelledby="h-bl">
+  <p class="eyebrow"><span class="zh">另一条路 · Chen, Marsh &amp; Al-Hebshi 2022（SMDI）</span><span class="en">Another route · Chen, Marsh &amp; Al-Hebshi 2022 (SMDI)</span></p>
+  <h2 id="h-bl"><span class="zh">不先找精确序列，直接问每条 read：你像哪个已知物种？</span><span class="en">Skip the exact sequences and ask each read: which known species do you look like?</span></h2>
+  <p class="zh">DADA2 先回答“样本里到底有哪些精确序列”（ASV），再给它们起名字。SMDI 论文（牙周炎的龈下微生物失调指数，J Dent Res 2022）走的是另一条路：先严格过滤，再把<b>每一条 read</b> 直接用 BLASTn 和整理好的 16S 参考库比对，记成最像的那个物种。这样不同研究、不同区域的数据最后都落在同一套物种名上，可以直接合并。论文用这条路合并了 6 个已发表的研究（覆盖 V1–V2、V1–V3、V3–V5、V4 等区域，也有 454 数据），3 个用来训练，3 个用来验证。</p>
+  <p class="en">DADA2 first answers "which exact sequences are in the sample" (ASVs) and names them afterwards. The SMDI paper (a subgingival microbial dysbiosis index for periodontitis, J Dent Res 2022) takes another route: filter hard, then compare <b>every read</b> directly with curated 16S references using BLASTn, and record it as the species it matches best. Data from different studies and regions then end up on one set of species names and can be pooled directly. The paper pooled six published studies this way (V1–V2, V1–V3, V3–V5, V4 and more, including 454 data): three for training, three for validation.</p>
+
+  <div class="lanes">
+    <div class="lane">
+      <h3><i style="background:var(--b1)"></i><span class="zh">DADA2 / ampliseq：先去噪，再起名</span><span class="en">DADA2 / ampliseq: denoise, then name</span></h3>
+      <ol>
+        <li><b>cutadapt</b> <span class="zh">切引物</span><span class="en">trim primers</span></li>
+        <li class="key"><b>filterAndTrim</b> <span class="zh">所有 reads 截成同一长度，maxEE 过滤</span><span class="en">cut every read to one length, filter by maxEE</span></li>
+        <li class="key"><b>learnErrors + dada</b> <span class="zh">学错误模型，推断精确序列（ASV）</span><span class="en">learn the error model, infer exact sequences (ASVs)</span></li>
+        <li><b>mergePairs · removeBimera</b> <span class="zh">拼接，去嵌合体</span><span class="en">merge, remove chimeras</span></li>
+        <li><b>assignTaxonomy</b> <span class="zh">k-mer 朴素贝叶斯，通常到属</span><span class="en">k-mer naive Bayes, usually to genus</span></li>
+        <li class="end"><span class="zh">跨研究：ASV 对不上 → 合并到属再比</span><span class="en">across studies: ASVs do not match → sum to genus</span></li>
+      </ol>
+    </div>
+    <div class="lane">
+      <h3><i style="background:var(--b2)"></i><span class="zh">SMDI：先严格过滤，再逐条比对</span><span class="en">SMDI: filter hard, then align read by read</span></h3>
+      <ol>
+        <li><b>PEAR</b> <span class="zh">先把双端 reads 拼起来</span><span class="en">merge paired reads first</span></li>
+        <li class="key"><b>mothur</b> <span class="zh">去掉有模糊碱基、引物有错配、同聚物 &gt; 8 的 reads；50 nt 滑窗平均 Q &lt; 35（深度低的研究用 30）的去掉；短于各数据集自己的长度阈值的去掉；再切引物</span><span class="en">drop reads with ambiguous bases, primer mismatches or homopolymers &gt; 8; drop reads whose 50-nt sliding-window mean Q falls below 35 (30 for low-depth sets); drop reads under each dataset's own length cutoff; then trim primers</span></li>
+        <li><b>UCHIME</b> <span class="zh">去嵌合体（用样本自己做参照）</span><span class="en">remove chimeras (self-reference)</span></li>
+        <li class="key"><b>BLASTn</b> <span class="zh">每条 read 比对 4 个整理好的参考库（HOMD 为首，按生物学相关性排优先级）；identity 和 coverage 都要 ≥ 98%；在优先级最高的库里取 identity 和 bit score 最高的；打平就给多物种标签</span><span class="en">align every read to four curated references (HOMD first, ranked by biological relevance); identity and coverage must both reach 98 %; take the highest identity and bit score in the highest-priority database; ties get a multi-species label</span></li>
+        <li><b>USEARCH</b> <span class="zh">没有匹配的 reads 自己聚成 OTU，≥ 100 条才保留，算作可能的新物种</span><span class="en">reads without a match are clustered into de novo OTUs, kept at ≥ 100 reads as possible new species</span></li>
+        <li class="end"><span class="zh">跨研究：同一套物种名，直接合并 → CLR → 随机森林 → 指数</span><span class="en">across studies: one set of species names, pooled directly → CLR → random forest → index</span></li>
+      </ol>
+    </div>
+  </div>
+
+  <h3 style="margin-top:18px"><span class="zh">动手：一个迷你 BLAST 分类器</span><span class="en">Try it: a mini BLAST classifier</span></h3>
+  <p class="zh">参考库里有 7 条 200 nt 的“16S 序列”，分属两个库：HOMD（优先）和另一个库。选一条 read，看它和每条参考序列的最佳比对。红色竖线是错配。简化：无空位比对，序列是生成的，物种名只是标签。</p>
+  <p class="en">The reference set holds seven 200-nt "16S sequences" in two databases: HOMD (first priority) and another one. Pick a read and see its best alignment to each reference; red ticks are mismatches. Simplified: ungapped alignment, generated sequences, species names are only labels.</p>
+  <div class="ctrl">
+    <label><span class="zh">read 来自</span><span class="en">Read from</span> <select id="blSrc"></select></label>
+    <span class="seg" role="group" aria-label="window"><button type="button" data-blwin="0" aria-pressed="true"><span class="zh">前 120 nt</span><span class="en">first 120 nt</span></button><button type="button" data-blwin="1" aria-pressed="false"><span class="zh">后 120 nt</span><span class="en">last 120 nt</span></button></span>
+  </div>
+  <div class="ctrl">
+    <label><span class="zh">测序错误</span><span class="en">Sequencing errors</span> <input type="range" id="blErr" min="0" max="6" step="1"><output id="blErro"></output></label>
+    <label><span class="zh">identity 阈值</span><span class="en">Identity cutoff</span> <input type="range" id="blThr" min="95" max="100" step="0.5"><output id="blThro"></output></label>
+    <button class="btn primary" id="blRun" type="button"><span class="zh">▶ 再比对一次</span><span class="en">▶ Align again</span></button>
+  </div>
+  <div class="stage"><canvas id="blCv" aria-label="BLAST hits per reference"></canvas></div>
+  <div class="narr" id="blNarr"></div>
+
+  <h3 style="margin-top:18px"><span class="zh">从物种计数到一个数字：SMDI</span><span class="en">From species counts to one number: the SMDI</span></h3>
+  <p class="zh">物种计数先做 CLR（零值用最小相对丰度的一半补）。在训练集上用随机森林（1,000 棵树）找出最能区分牙周炎和健康的物种，按重要性（Gini）阈值挑出 49 个：31 个和牙周炎相关（T. denticola、M. timidum、Fretibacterium、T. forsythia 等），18 个和健康相关（A. naeslundii、S. sanguinis 等）。指数就是一个差：</p>
+  <p class="en">Species counts are CLR-transformed first (zeros get half the smallest relative abundance). A random forest (1,000 trees) on the training set finds the species that best separate periodontitis from health, and an importance (Gini) cutoff keeps 49: 31 linked to periodontitis (T. denticola, M. timidum, Fretibacterium, T. forsythia and others) and 18 linked to health (A. naeslundii, S. sanguinis and others). The index is one difference:</p>
+  <div class="formula">SMDI = mean CLR(<span class="zh">牙周炎相关物种</span><span class="en">periodontitis-linked species</span>) − mean CLR(<span class="zh">健康相关物种</span><span class="en">health-linked species</span>)</div>
+  <div class="stage"><canvas id="smdiCv" aria-label="SMDI for two example samples"></canvas></div>
+  <p class="zh">论文的结果：训练集 AUC 0.96，另外 3 个研究上 0.92；指数大约从 −6 到 5，0 附近分开大多数样本。只用 3 个属（Fretibacterium、Treponema、Actinomyces）的简化版 AUC 也有 0.93。同一批样本测两个区域时指数高度相关（V1–V3 对 V3–V5：r = 0.89；V1–V2 对 V4：r = 0.95），但 V4 让指数整体左移约 1 个单位，正是“跨研究”一节里方案带来的固定偏移。作者自己也写道，把指数用到新数据上需要统一生物信息学流程。</p>
+  <p class="en">The paper's results: AUC 0.96 on the training set and 0.92 on three other studies; the index runs from about −6 to 5, and values near 0 separate most samples. A simplified version with only three genera (Fretibacterium, Treponema, Actinomyces) still reaches AUC 0.93. The same samples sequenced in two regions gave highly correlated indexes (V1–V3 vs V3–V5: r = 0.89; V1–V2 vs V4: r = 0.95), but V4 shifted the index left by about one unit, which is the fixed protocol offset of the cross-study section. The authors themselves note that using the index on new data needs a standardized bioinformatic workflow.</p>
+
+  <h3 style="margin-top:18px"><span class="zh">放到我们的问题清单上</span><span class="en">Against our list of problems</span></h3>
+  <div class="twolist">
+    <div>
+      <h3 class="good"><span class="zh">影响变小</span><span class="en">Matter less</span></h3>
+      <ul>
+        <li><span class="zh">没有固定截断长度，只有最短长度：不会出现 E23 那种“差 1 bp 整批丢光”（Q05、Q07）</span><span class="en">No fixed cut length, only a minimum: no E23-style "1 bp short, whole batch gone" (Q05, Q07)</span></li>
+        <li><span class="zh">BLASTn 默认两条链都搜，read 方向不再是硬要求（Q08）</span><span class="en">BLASTn searches both strands by default, so read orientation is no longer a hard requirement (Q08)</span></li>
+        <li><span class="zh">不同区域、不同平台落到同一套物种名上，不再有“0 个共享 ASV”</span><span class="en">Different regions and platforms land on the same species names: no more "zero shared ASVs"</span></li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="warn"><span class="zh">仍然会遇到</span><span class="en">Still there</span></h3>
+      <ul>
+        <li><span class="zh">滑窗 Q35 过滤要真实的质量分数（Q01）；它的质量过滤也查引物错配，所以还得知道引物（Q13、Q14）</span><span class="en">The Q35 window filter needs real quality scores (Q01); the filter also checks primer mismatches, so the primers must still be known (Q13, Q14)</span></li>
+        <li><span class="zh">下载层（Q02–Q04）和策展层（Q16–Q22）的问题与分析方法无关</span><span class="en">Archive problems (Q02–Q04) and curation problems (Q16–Q22) do not depend on the analysis method</span></li>
+        <li><span class="zh">长度阈值、Q35 还是 Q30，每个数据集要有人定</span><span class="en">The length cutoff, and Q35 vs Q30, are set per dataset by a person</span></li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="bad"><span class="zh">新的代价</span><span class="en">New costs</span></h3>
+      <ul>
+        <li><span class="zh">98% 也是悬崖：120 nt 里 3 个错误就只剩 97.5%，read 找不到匹配（上面的演示可以试）</span><span class="en">98 % is a cliff too: 3 errors in 120 nt leave 97.5 %, and the read finds no match (try it in the demo)</span></li>
+        <li><span class="zh">离不开整理好的参考库：口腔有 HOMD，肠道没有同样细到物种的库，V4 也很少能分开肠道的物种</span><span class="en">It depends on a curated reference: the mouth has HOMD, the gut has nothing as fine-grained, and V4 rarely separates gut species</span></li>
+        <li><span class="zh">每条 read 都要比对一次，计算量随 reads 数增长；方案偏差还在（V4 平移约 1 个单位）</span><span class="en">Every read is aligned once, so the work grows with the read count; protocol bias remains (V4 shifted about one unit)</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ OUR STUDIES ============ -->
+<section class="card" id="ours" aria-labelledby="h-o">
+  <p class="eyebrow"><span class="zh">经验</span><span class="en">Experience</span></p>
+  <h2 id="h-o"><span class="zh">我们的 8 个研究，每个都断在不同地方</span><span class="en">Our eight studies, each broke somewhere different</span></h2>
+  <p class="zh">E 编号见 <code>docs/experience-log.md</code>，Q 编号见 <code>docs/failure-taxonomy.md</code>。QC 结论来自 <code>studies/*/pipeline_qc.json</code>。</p>
+  <p class="en">E numbers refer to <code>docs/experience-log.md</code>, Q numbers to <code>docs/failure-taxonomy.md</code>. QC verdicts come from <code>studies/*/pipeline_qc.json</code>.</p>
+  <div class="wall" id="wall"></div>
+  <h3 style="margin-top:20px"><span class="zh">23 个已记录的数据问题，按出事的层分</span><span class="en">The 23 recorded data problems, by the layer where they hit</span></h3>
+  <p class="zh">点一段看列表。真正属于“DADA2 对长度和质量的要求”的只有 4 个，但引物和 reads 结构那 7 个，也是因为它要求 reads 整齐才变成问题。</p>
+  <p class="en">Click a segment for the list. Only 4 belong to DADA2's length-and-quality contract, but the 7 about primers and read structure became problems because it needs tidy reads too.</p>
+  <div class="catbar" id="catBar" role="group" aria-label="catalog layers"></div>
+  <ul class="catlist" id="catList"></ul>
+</section>
+
+<!-- ============ QUESTIONS ============ -->
+<section class="card" id="think" aria-labelledby="h-th">
+  <p class="eyebrow"><span class="zh">留给你想的问题</span><span class="en">Questions to think about</span></p>
+  <h2 id="h-th"><span class="zh">在重新设计之前</span><span class="en">Before redesigning anything</span></h2>
+  <ul class="qs">
+    <li><span class="zh">每一步对数据做了什么假设？谁来检查这个假设在这个研究里成立？</span><span class="en">What does each step assume about the data, and who checks that the assumption holds for this study?</span></li>
+    <li><span class="zh">哪些参数是“悬崖”（差 1 bp 全丢），哪些是“斜坡”（差一点丢一点）？能不能把悬崖都换成斜坡？</span><span class="en">Which parameters are cliffs (1 bp short, all lost) and which are slopes (a little off, a little lost)? Can every cliff become a slope?</span></li>
+    <li><span class="zh">最终目标（跨研究区分 IBD 和健康）实际用到多少分辨率？为了用不上的精度付出了多少代价？</span><span class="en">How much resolution does the end goal (telling IBD from healthy across studies) actually use, and what do we pay for precision it never uses?</span></li>
+    <li><span class="zh">和标签对齐的丢失或偏移（E23 里被截掉的大多是对照；42349924 的对照另测）应该由谁、在哪一步发现？</span><span class="en">Who should notice a loss or offset that lines up with the label (E23 cut away mostly controls; 42349924's controls were sequenced elsewhere), and at which step?</span></li>
+    <li><span class="zh">如果让 agent 来定每个研究的阈值，什么样的证据和检查能让人信任它？</span><span class="en">If an agent sets each study's thresholds, what evidence and checks would make it trustworthy?</span></li>
+  </ul>
+  <p class="muted" style="margin-top:12px"><span class="zh">一些初步想法写在 <code>docs/heterogeneity-strategy.md</code>。</span><span class="en">Some first ideas are in <code>docs/heterogeneity-strategy.md</code>.</span></p>
+</section>
+
+<div class="foot">
+  <p><b><span class="zh">来源</span><span class="en">Sources</span></b></p>
+  <ul>
+    <li>Callahan et al. 2016, Nature Methods: DADA2 (error model, abundance p-value, OMEGA_A).</li>
+    <li>Callahan, McMurdie &amp; Holmes 2017, ISME J: exact sequence variants vs OTUs.</li>
+    <li>Wang et al. 2007, Applied and Environmental Microbiology: the RDP naive Bayesian classifier (8-mers, bootstrap).</li>
+    <li>Amir et al. 2017, mSystems: Deblur. Bolyen et al. 2019, Nature Biotechnology: QIIME 2.</li>
+    <li>Chen, Marsh &amp; Al-Hebshi 2022, Journal of Dental Research: SMDI, an index for measuring subgingival microbial dysbiosis (PEAR, mothur, UCHIME, prioritized BLASTn, CLR, random forest). Al-Hebshi et al. 2015, Journal of Oral Microbiology: the prioritized BLASTn species-assignment algorithm.</li>
+    <li>McLaren, Willis &amp; Callahan 2019, eLife: consistent and correctable bias. McDonald et al. 2024, Nature Biotechnology: Greengenes2. Ma et al. 2022, Genome Biology: MMUPHin.</li>
+    <li><span class="zh">本项目：</span><span class="en">This project:</span> <code>docs/failure-taxonomy.md</code>, <code>docs/experience-log.md</code>, <code>docs/ml-results.md</code>, <code>pipeline/README.md</code>, <code>studies/*/pipeline_qc.json</code>, <code>studies/*/protocol.json</code>.</li>
+  </ul>
+  <p><span class="zh">标着“模拟”或“示意”的图是为了讲清楚机制而生成的数据；真实测量的数字都在正文里标明了出处。</span><span class="en">Panels marked simulated or illustrative use generated data to show the mechanism; measured numbers in the text name their source.</span></p>
+</div>
+</main>
+
+<script>
+"use strict";
+/* ---------------- shared helpers ---------------- */
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const _cc={};const css=n=>_cc[n]!==undefined?_cc[n]:(_cc[n]=getComputedStyle(document.documentElement).getPropertyValue(n).trim());
+const lang=()=>document.documentElement.getAttribute("data-lang")==="en"?"en":"zh";
+const L=o=>o==null?"":(typeof o==="string"?o:(o[lang()]!=null?o[lang()]:o.zh));
+const REDUCED=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const SANS='-apple-system,"PingFang SC","Hiragino Sans GB","Noto Sans SC",sans-serif';
+const MONO='"IBM Plex Mono",ui-monospace,Menlo,monospace';
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function gauss(r){let u=0;while(!u)u=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*r())}
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const ease=x=>{x=clamp(x,0,1);return x*x*(3-2*x)};
+const redraws=[];const onRedraw=f=>{redraws.push(f)};
+function redrawAll(){for(const k in _cc)delete _cc[k];for(const f of redraws){try{f()}catch(e){console.error(e)}}}
+const FM="'IBM Plex Mono',ui-monospace,Menlo,monospace",FS="-apple-system,'PingFang SC','Hiragino Sans GB','Noto Sans SC',sans-serif";
+function fit(cv,h,minW){
+  const dpr=window.devicePixelRatio||1,w=Math.max(minW||280,Math.floor(cv.parentElement.clientWidth));
+  if(cv._w!==w||cv._h!==h||cv._d!==dpr){cv._w=w;cv._h=h;cv._d=dpr;cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);cv.style.width=w+"px";cv.style.height=h+"px"}
+  const c=cv.getContext("2d");c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);return{c,w,h};
+}
+function font(px,mono,weight){return (weight||400)+" "+px+"px "+(mono?MONO:SANS)}
+function baseColor(b){return css({A:"--nA",C:"--nC",G:"--nG",T:"--nT"}[b]||"--ink-3")}
+function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
+function sci(log10){if(log10>-0.01)return"1";if(log10>-3)return Math.pow(10,log10).toPrecision(2);const e=Math.floor(log10),m=Math.pow(10,log10-e);return m.toFixed(1)+"e"+e}
+function erfc(x){const z=Math.abs(x),t=1/(1+0.5*z),r=t*Math.exp(-z*z-1.26551223+t*(1.00002368+t*(0.37409196+t*(0.09678418+t*(-0.18628806+t*(0.27886807+t*(-1.13520398+t*(1.48851587+t*(-0.82215223+t*0.17087277)))))))));return x>=0?r:2-r}
+function mannWhitneyP(x,y){if(!x.length||!y.length)return 1;let u=0;for(const a of x)for(const b of y)u+=a>b?1:a===b?0.5:0;const n1=x.length,n2=y.length,m=n1*n2/2,s=Math.sqrt(n1*n2*(n1+n2+1)/12);if(!s)return 1;return erfc(Math.abs((u-m)/s)/Math.SQRT2)}
+function auroc(neg,pos){let s=0;for(const p of pos)for(const n of neg)s+=p>n?1:p===n?0.5:0;return s/(pos.length*neg.length)}
+const median=a=>{if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
+const pct=x=>(x*100).toFixed(x<0.1&&x>0?1:0)+"%";
+function inView(el,cb){if(!("IntersectionObserver" in window)){cb(true);return}new IntersectionObserver(es=>es.forEach(e=>cb(e.isIntersecting)),{rootMargin:"80px"}).observe(el)}
+function pressGroup(sel,attr,val){$$(sel).forEach(b=>b.setAttribute("aria-pressed",String(b.getAttribute(attr)===val)))}
+
+/* ---------------- language ---------------- */
+function setLang(l){
+  document.documentElement.setAttribute("data-lang",l);document.documentElement.lang=l==="en"?"en":"zh-CN";
+  try{localStorage.setItem("explainer-lang",l)}catch(e){}
+  $("#langZh").setAttribute("aria-pressed",String(l==="zh"));$("#langEn").setAttribute("aria-pressed",String(l==="en"));
+  redrawAll();
+}
+$("#langZh").onclick=()=>setLang("zh");$("#langEn").onclick=()=>setLang("en");
+
+/* ---------------- hero: eleven stations ---------------- */
+const ST=[
+ {n:{zh:"样本与 PCR",en:"Sample & PCR"},
+  narr:{zh:"从粪便提 DNA，一对引物把 16S 基因上的一小段放大成上百万份。灰色格子是引物。",en:"DNA comes out of the stool sample, and a primer pair copies one short window of the 16S gene millions of times. The grey cells are the primer."},
+  what:{zh:"从粪便提 DNA，用一对引物 PCR 扩增 16S 基因上的一小段（比如 V4 或 V3–V4）。",en:"DNA is extracted from stool, and one primer pair amplifies a short window of the 16S gene (for example V4 or V3–V4)."},
+  par:{zh:"引物对、PCR 循环数",en:"primer pair, PCR cycles"},
+  asm:{zh:"引物对所有细菌结合得一样好。其实不然：每种细菌被放大的倍数不同，不同方案看到的丰度有系统偏差（见“跨研究”一节）。",en:"The primers bind every bacterium equally well. They do not: each taxon is amplified by its own factor, so different protocols see systematically different abundances (see the section on comparing studies)."},
+  broke:[{q:"bias",s:{zh:"所有跨研究比较",en:"every cross-study comparison"},t:{zh:"方案偏差",en:"protocol bias"},ok:1}]},
+ {n:{zh:"测序",en:"Sequencing"},
+  narr:{zh:"测序仪一个个读出碱基，并给每个碱基打一个质量分数（下面的小柱）。越往后越不可信。",en:"The sequencer reads the bases one by one and gives each a quality score (the small bars). The further along the read, the less trustworthy."},
+  what:{zh:"测序仪从扩增子的一端或两端读出序列。读长和错误类型由平台决定：Illumina 越往后错得越多（替换），454 和 Ion Torrent 在同聚物处多读或少读（插入缺失）。",en:"The sequencer reads the amplicon from one or both ends. The platform sets read length and error type: Illumina errors grow along the read (substitutions); 454 and Ion Torrent miscount homopolymers (insertions and deletions)."},
+  par:{zh:"平台、读长（1×101、2×250、2×300…）",en:"platform, read length (1×101, 2×250, 2×300…)"},
+  asm:{zh:"后面的步骤大多按 Illumina 双端的习惯来写。",en:"Most later steps are written with Illumina paired reads in mind."},
+  broke:[{q:"Q07",s:"23013615",t:{zh:"454 reads 长短不一",en:"454 reads of mixed length"}},{q:"E15",s:"28174747",t:{zh:"HiSeq 1×101 盖不住整个 V4",en:"HiSeq 1×101 cannot span V4"}}]},
+ {n:{zh:"公共数据库",en:"Public archive"},
+  narr:{zh:"研究者把 FASTQ 交给 SRA / ENA，我们再从那里下载。数据库怎么转换、压缩，由它说了算。",en:"The authors deposit FASTQ files with SRA / ENA, and we download them from there. How the archive converts and compresses them is up to the archive."},
+  what:{zh:"研究者把 FASTQ 上传到 SRA / ENA，我们从那里下载。中间的格式转换和压缩由数据库决定。",en:"Authors upload FASTQ to SRA / ENA and we download from there. Format conversion and compression in between are the archive's choice."},
+  par:{zh:"下载来源（ENA FASTQ、NCBI .sra）、md5",en:"download source (ENA FASTQ, NCBI .sra), md5"},
+  asm:{zh:"下载到的文件就是元数据说的那样。",en:"The file you download is what the metadata says it is."},
+  broke:[{q:"Q01",s:"23013615, 37696680",t:{zh:"质量分数被换成同一个值（SRA Lite）",en:"quality scores replaced by one value (SRA Lite)"}},{q:"Q02",s:"35756051",t:{zh:"FASTQ 链接给的是 HTML 网页",en:"the FASTQ link serves an HTML page"}},{q:"Q03",s:"37696680",t:{zh:"返回空内容",en:"empty content"}},{q:"Q04",s:"36111238",t:{zh:"写着单端，给的是双端",en:"declared single-end, served as pairs"}},{q:"Q16",s:"29335008, 37696680",t:{zh:"项目里混着 shotgun 或 ITS 数据",en:"shotgun or ITS runs mixed into the project"}}]},
+ {n:{zh:"cutadapt：切引物",en:"cutadapt: trim primers"},
+  narr:{zh:"cutadapt 在 read 开头找到引物，剪掉。找不到引物的 read，ampliseq 默认直接丢掉。",en:"cutadapt finds the primer at the start of the read and cuts it off. By default ampliseq drops reads where it finds no primer."},
+  what:{zh:"在每条 read 开头找引物序列并切掉。ampliseq 默认丢掉找不到引物的 reads。",en:"Finds the primer at the start of each read and cuts it off. By default ampliseq drops reads where no primer is found."},
+  par:{zh:"引物序列、允许约 10% 错配、方向",en:"primer sequences, about 10 % mismatches allowed, orientation"},
+  asm:{zh:"知道引物是什么，reads 从引物开始，方向一致。",en:"The primers are known, reads start with them, and all reads face the same way."},
+  broke:[{q:"Q08",s:"23013615",t:{zh:"87% 的 reads 是反向读的",en:"87 % of reads read in reverse"}},{q:"Q09",s:"28174747",t:{zh:"引物早被切掉了",en:"primers already removed"}},{q:"Q11",s:"36111238",t:{zh:"引物前多出 2–8 nt",en:"2–8 nt before the primer"}},{q:"Q12",s:"37661264",t:{zh:"引物 5′ 端被截",en:"primer 5′ end clipped"}},{q:"Q13",s:"36111238",t:{zh:"论文印的引物少一个碱基",en:"primer printed one base short"}},{q:"Q14",s:"37661264, 37696680",t:{zh:"论文没给引物",en:"no primers in the paper"}}]},
+ {n:{zh:"filterAndTrim：截断与过滤",en:"filterAndTrim: cut & filter"},
+  narr:{zh:"所有 reads 被截到同一个长度，低质量的尾巴被切掉；预期错误数太多的整条丢掉。比截断长度短的 read 也整条丢掉。",en:"Every read is cut to the same length, which removes the poor tail; reads with too many expected errors are dropped. So is any read shorter than the cut."},
+  what:{zh:"把每条 read 截成同一个长度 truncLen，再丢掉预期错误数 EE 超过 maxEE 的 reads。比 truncLen 短的 read 整条丢掉。",en:"Cuts every read to one length, truncLen, then drops reads whose expected errors EE exceed maxEE. A read shorter than truncLen is dropped whole."},
+  par:{zh:"truncLen（F/R）、maxEE、truncQ、maxN = 0",en:"truncLen (F/R), maxEE, truncQ, maxN = 0"},
+  asm:{zh:"同一个研究里所有 reads 一样长，质量曲线相似。",en:"All reads of a study have the same length and similar quality curves."},
+  broke:[{q:"Q05",s:"36111238",t:{zh:"短 1 bp 的批次丢了 98% reads（E23）",en:"a batch 1 bp shorter lost 98 % of reads (E23)"}},{q:"Q07",s:"23013615",t:{zh:"不截断时一个细菌拆成很多长度的 ASV（E4）",en:"without a fixed cut, one organism split into ASVs of many lengths (E4)"}},{q:"QC",s:"35756051",t:{zh:"中位保留率 38%，42/89 个 run 不到 20%",en:"median retention 38 %, 42 of 89 runs under 20 %"}}]},
+ {n:{zh:"learnErrors：学错误模型",en:"learnErrors: error model"},
+  narr:{zh:"DADA2 从数据本身学“每种碱基替换在每个质量分数下发生的概率”。质量分数告诉它哪些碱基可信。",en:"DADA2 learns from the data how often each substitution happens at each quality score. The quality scores tell it which bases to trust."},
+  what:{zh:"从数据本身学出错误模型：每种碱基替换（A→C、A→G…）在每个质量分数下的概率。每个测序批次单独学。",en:"Learns the error model from the data itself: the probability of each substitution (A→C, A→G…) at each quality score, separately for each sequencing batch."},
+  par:{zh:"按测序批次（我们从 read 名字里的 flowcell 读出批次）",en:"per sequencing batch (we read the flowcell from the read names)"},
+  asm:{zh:"质量分数是真的，而且有信息量。",en:"Quality scores are real and informative."},
+  broke:[{q:"Q01",s:"23013615, 37696680",t:{zh:"SRA Lite 把质量分数换成同一个值",en:"SRA Lite set every score to one value"}},{q:"Q15",s:{zh:"规则",en:"rule"},t:{zh:"分箱质量只有 3–7 个值，停下等人看",en:"binned scores (3–7 values) stop for review"}}]},
+ {n:{zh:"dada：去噪",en:"dada: denoise"},
+  narr:{zh:"核心步骤：红框里的碱基是测序错误。DADA2 判断出它只是更多的那个序列的错误，把它改回去。",en:"The core step: the base in the red box is a sequencing error. DADA2 decides it is only an error of the more abundant sequence and corrects it."},
+  what:{zh:"判断每个不同的序列是真实的变体，还是某个更多的序列的测序错误。用丰度 p 值检验（“去噪”一节可以亲手跑）。",en:"Decides whether each distinct sequence is a real variant or a sequencing error of a more abundant one, with an abundance p-value (try it in the denoising section)."},
+  par:{zh:"OMEGA_A = 1e-40；pool：独立 / pseudo / pooled",en:"OMEGA_A = 1e-40; pool: independent / pseudo / pooled"},
+  asm:{zh:"错误是错误模型能解释的替换，所有序列等长。",en:"Errors are substitutions the error model explains, and all sequences have the same length."},
+  broke:[{q:"E11",s:"37661264",t:{zh:"pooled 每个方向 1 小时 45 分，8 核只用到 3 核",en:"pooled: 1 h 45 min per direction, 3 of 8 cores busy"}}]},
+ {n:{zh:"mergePairs：拼接",en:"mergePairs: merge"},
+  narr:{zh:"R2 从另一头读回来。两条在中间重叠的地方对齐、拼成一条完整的扩增子。",en:"R2 comes back from the other end. The two reads line up where they overlap and join into one full amplicon."},
+  what:{zh:"把 R1 和反向互补后的 R2 在重叠处拼起来。默认至少重叠 12 nt，不允许错配。",en:"Joins R1 and the reverse complement of R2 where they overlap. By default the overlap must be at least 12 nt with no mismatches."},
+  par:{zh:"minOverlap 12，maxMismatch 0",en:"minOverlap 12, maxMismatch 0"},
+  asm:{zh:"truncF + truncR 比扩增子长 12 nt 以上。",en:"truncF + truncR is at least 12 nt longer than the amplicon."},
+  broke:[{q:"Q06",s:"35756051",t:{zh:"自动截断只剩 17 nt 重叠，改成 281/178",en:"automatic truncation left 17 nt of overlap; set 281/178"}}]},
+ {n:{zh:"removeBimera：去嵌合体",en:"removeBimera: chimeras"},
+  narr:{zh:"上面那条“半蓝半黄”的序列是 PCR 换模板造出来的嵌合体：左半像一个亲本，右半像另一个。删掉。",en:"The half-and-half sequence above is a chimera made when PCR switched templates: its left looks like one parent, its right like another. It goes."},
+  what:{zh:"PCR 时聚合酶可能半路换模板，造出前半段来自 A、后半段来自 B 的序列。一个 ASV 如果能由两个更多的 ASV 左右拼出来，就删掉。",en:"During PCR the polymerase can switch templates halfway, making a sequence whose first half comes from A and second half from B. An ASV that can be built from the left and right of two more abundant ASVs is removed."},
+  par:{zh:"method = consensus",en:"method = consensus"},
+  asm:{zh:"两个亲本都在，而且比嵌合体多。",en:"Both parents are present and more abundant than the chimera."},
+  broke:[{q:"—",s:{zh:"暂无",en:"none yet"},t:{zh:"8 个研究里没在这里出过问题",en:"no problem here in the eight studies"},ok:1}]},
+ {n:{zh:"assignTaxonomy：分类",en:"assignTaxonomy: name it"},
+  narr:{zh:"8-mer 投票：这段序列是 E. coli 的 V4，分类器给出 Escherichia-Shigella，bootstrap 支持度 100。",en:"8-mers vote: this is the V4 of E. coli, so the classifier says Escherichia-Shigella with bootstrap support 100."},
+  what:{zh:"朴素贝叶斯 k-mer 分类器（RDP 方法）对照 SILVA，从门到属给每个 ASV 起名，并用 bootstrap 给出置信度；addSpecies 再用完全匹配补到种。",en:"A naive Bayes k-mer classifier (the RDP method) compares each ASV with SILVA, names it from phylum to genus, and gives a bootstrap confidence; addSpecies then adds the species by exact matching."},
+  par:{zh:"minBoot 50、SILVA 版本",en:"minBoot 50, SILVA release"},
+  asm:{zh:"参考库覆盖这个片段；片段越短，能区分属的 k-mer 越少。",en:"The reference covers this window; the shorter the window, the fewer k-mers can tell genera apart."},
+  broke:[{q:"E14",s:"37661264",t:{zh:"addSpecies 每块 15–17 GB、约 5 小时，现在跳过",en:"addSpecies took 15–17 GB per chunk, about 5 h; now skipped"}}]},
+ {n:{zh:"ASV 表 → 数据库 → 模型",en:"ASV table → database → model"},
+  narr:{zh:"最后每条 read 变成表格里的一个计数：ASV × 样本。QC 检查后进数据库，再拿去和别的研究一起建模。",en:"In the end each read becomes one count in a table of ASVs × samples. After QC it goes into the database and into models alongside other studies."},
+  what:{zh:"得到每个研究的 ASV × 样本计数表，过 QC 后进数据库，再做跨研究的模型。",en:"Produces each study's ASV × sample count table, which passes QC, enters the database and feeds the cross-study model."},
+  par:{zh:"QC 规则：失败 run 比例、过滤保留率、拼接率、长度、未分类比例",en:"QC rules: failed runs, filter retention, merge rate, length, unassigned share"},
+  asm:{zh:"QC 规则适用于所有读长；不同研究的 ASV 能对得上。",en:"QC rules fit every read layout; ASVs from different studies can be matched."},
+  broke:[{q:"E15",s:"28174747",t:{zh:"长度检查误判 1×101 reads",en:"the length check misreads 1×101 reads"}},{q:"ML",s:{zh:"5 个研究",en:"5 studies"},t:{zh:"任意两个研究之间 0 个共享 ASV，只能按属比较",en:"0 ASVs shared between any two studies; genus level only"}},{q:"Q21",s:"42349924",t:{zh:"对照整批在另一个 run",en:"all controls in a separate run"}}]}
+];
+const heroCv=$("#heroCv");
+const HSEG=1.75,HDW=1.15,HLOOP=ST.length*HSEG+1.2;
+let hT=REDUCED?(9*HSEG+HDW):0.01,hPlay=!REDUCED,hLast=0,hSel=0,hK=-1,hVisible=true;
+const BODY="TACGGAGGGTGCAAGCGTTAATCGG",ERRI=10,WRONG="C",PRIMER="GTGCC",TAILS="AATTAC",R2S="ATCGGAATTA",OVL=3;
+function hEff(k){return clamp((hT-k*HSEG)/HDW,0,1)}
+function drawHero(){
+  const {c,w,h}=fit(heroCv,236,300);
+  const m=Math.max(22,w*0.035),trackY=h-34,xs=ST.map((_,i)=>m+i*(w-2*m)/(ST.length-1));
+  const k=Math.min(ST.length-1,Math.floor(hT/HSEG)),loc=hT-k*HSEG;
+  const ink=css("--ink"),ink3=css("--ink-3"),line=css("--line"),acc=css("--accent"),surf=css("--surface"),bad=css("--bad"),ok=css("--ok");
+  c.lineWidth=3;c.strokeStyle=line;c.beginPath();c.moveTo(xs[0],trackY);c.lineTo(xs[xs.length-1],trackY);c.stroke();
+  c.strokeStyle=acc;c.beginPath();c.moveTo(xs[0],trackY);c.lineTo(xs[k]+(k<ST.length-1&&loc>HDW?(xs[k+1]-xs[k])*ease((loc-HDW)/(HSEG-HDW)):0),trackY);c.stroke();
+  for(let i=0;i<ST.length;i++){const cur=i===k;c.beginPath();c.arc(xs[i],trackY,cur?12:10,0,7);c.fillStyle=i<=k?acc:surf;c.fill();c.lineWidth=2;c.strokeStyle=cur?acc:line;c.stroke();
+    c.fillStyle=i<=k?surf:ink3;c.font=font(11,1,600);c.textAlign="center";c.textBaseline="middle";c.fillText(String(i+1),xs[i],trackY+0.5)}
+  let gx=xs[k];if(k<ST.length-1&&loc>HDW)gx=xs[k]+(xs[k+1]-xs[k])*ease((loc-HDW)/(HSEG-HDW));
+  const cw=clamp(w/118,5,9),chh=cw*1.55,gy=trackY-92;
+  const e=[...Array(ST.length)].map((_,i)=>hEff(i));
+  const X=idx=>gx+(idx-12)*cw;
+  const seqOn=idx=>e[1]>clamp((idx+5)/37,0,1);
+  const glyphA=(e[2]>0&&e[2]<1?1-0.65*Math.sin(Math.PI*e[2]):1)*(1-e[10]);
+  const scale=1-0.55*e[10];
+  function cell(idx,b,dy,alpha,opt){
+    if(alpha<=0.01)return;const x=gx+(X(idx)-gx)*scale,y=gy+dy,cwS=cw*scale,chS=chh*scale;
+    c.globalAlpha=alpha*glyphA;c.fillStyle=(opt&&opt.gray)||!b?ink3:baseColor(b);rr(c,x+0.6,y,cwS-1.2,chS,1.5);c.fill();
+    if(opt&&opt.ring){c.lineWidth=2;c.strokeStyle=opt.ring;c.stroke()}
+    c.globalAlpha=1;
+  }
+  // PCR copies
+  if(e[0]>0&&e[0]<1){const a=0.45*Math.sin(Math.PI*e[0]);for(const s of[-1,1])for(let i=-5;i<31;i++)cell(i,null,s*(chh+5)*e[0],a,{gray:1})}
+  // archive icon
+  {const ax=xs[2],ay=gy-42;c.globalAlpha=k===2?1:0.5;c.strokeStyle=ink3;c.lineWidth=1.5;c.beginPath();c.ellipse(ax,ay,13,4,0,0,7);c.stroke();c.beginPath();c.moveTo(ax-13,ay);c.lineTo(ax-13,ay+14);c.ellipse(ax,ay+14,13,4,0,Math.PI,0,true);c.lineTo(ax+13,ay);c.stroke();c.globalAlpha=1}
+  // primer cells
+  for(let i=0;i<5;i++){const dy=e[3]*38,a=1-e[3];cell(i-5,seqOn(i-5)?PRIMER[i]:null,dy,a,{gray:1})}
+  // body
+  for(let i=0;i<BODY.length;i++){
+    let b=BODY[i],opt=null;
+    if(!seqOn(i)){cell(i,null,0,1,{gray:1});continue}
+    if(i===ERRI){if(e[6]<0.5){b=WRONG;opt={ring:bad}}else if(e[6]<1){opt={ring:ok}}}
+    cell(i,b,0,1,opt);
+  }
+  // tail
+  for(let i=0;i<6;i++){const idx=25+i;cell(idx,seqOn(idx)?TAILS[i]:null,e[4]*38,(1-e[4])*0.55,null)}
+  // quality bars
+  const qa=e[1]*(1-e[6]);
+  if(qa>0.01){for(let idx=-5;idx<31;idx++){if(idx<0&&e[3]>=1)continue;if(idx>=25&&e[4]>=1)continue;const q=idx>=25?12+((idx*7)%5):idx<0?34:36-Math.max(0,idx-14)*0.6;
+    c.globalAlpha=qa*(idx<0?1-e[3]:idx>=25?1-e[4]:1);c.fillStyle=idx>=25?bad:ink3;const bh=q/40*13;c.fillRect(X(idx)+1,gy+chh+16-bh,cw-2,bh);c.globalAlpha=1}}
+  // learnErrors icon
+  if(k===5){const a=Math.min(1,e[5]*3)*(e[5]<1?1:0.4),ix=gx-cw*12,iy=gy-38;c.globalAlpha=a;c.strokeStyle=ink3;c.lineWidth=1;c.beginPath();c.moveTo(ix,iy);c.lineTo(ix,iy+26);c.lineTo(ix+46,iy+26);c.stroke();
+    c.strokeStyle=acc;c.lineWidth=2;c.beginPath();for(let s=0;s<=20*e[5];s++){const x=ix+s*2.3,y=iy+24-22*Math.exp(-s/5);s?c.lineTo(x,y):c.moveTo(x,y)}c.stroke();c.fillStyle=ink3;c.font=font(10,1);c.textAlign="left";c.fillText("Q → err",ix+4,iy-4);c.globalAlpha=1}
+  // R2 merge
+  if(e[7]>0){const t=e[7];const dy=t<0.6?(chh+30)*(1-t/0.6)+chh+6:(chh+6)*(1-(t-0.6)/0.4);
+    for(let i=0;i<R2S.length;i++){const idx=25-OVL+i;if(t>=1&&idx<25)continue;cell(idx,R2S[i],dy,1,t<1?{ring:css("--b2")}:null)}}
+  // chimera
+  if(e[8]>0&&e[8]<1){const t=e[8],dy=-(chh+16)-(t>0.6?(t-0.6)*60:0),a=t<0.25?t/0.25:t>0.6?1-(t-0.6)/0.4:1;
+    for(let i=0;i<18;i++){const col=i<9?css("--b1"):css("--b2");c.globalAlpha=a*glyphA;c.fillStyle=col;rr(c,X(i+3)+0.6,gy+dy,cw-1.2,chh,1.5);c.fill()}
+    if(t>0.3){c.globalAlpha=a;c.strokeStyle=bad;c.lineWidth=2.5;c.beginPath();c.moveTo(X(3),gy+dy-3);c.lineTo(X(21),gy+dy+chh+3);c.moveTo(X(3),gy+dy+chh+3);c.lineTo(X(21),gy+dy-3);c.stroke()}
+    c.globalAlpha=1}
+  // taxonomy tag
+  if(e[9]>0&&e[10]<1){const a=e[9]*(1-e[10]),txt="g__Escherichia-Shigella · boot 100";c.font=font(11.5,1,500);const tw=c.measureText(txt).width+16,tx=clamp(gx-tw/2,4,w-tw-4),ty=gy-chh-22;
+    c.globalAlpha=a;c.fillStyle=css("--accent-soft");rr(c,tx,ty,tw,20,6);c.fill();c.strokeStyle=acc;c.lineWidth=1;c.stroke();c.fillStyle=ink;c.textAlign="left";c.textBaseline="middle";c.fillText(txt,tx+8,ty+10.5);c.globalAlpha=1}
+  // table
+  if(k===10||e[10]>0){const tx=xs[10]-64,ty=gy-44,cs=16;c.globalAlpha=Math.min(1,e[10]*2+0.15);c.font=font(10,1);c.textAlign="center";c.textBaseline="middle";
+    for(let r=0;r<3;r++)for(let q=0;q<4;q++){c.strokeStyle=line;c.lineWidth=1;c.strokeRect(tx+q*(cs+12),ty+r*(cs+2),cs+12,cs);const v=r===0&&q===1?Math.round(812+e[10]):[[0,0,3,41],[0,0,0,7],[59,2,0,0]][r][q];c.fillStyle=r===0&&q===1?acc:ink3;c.fillText(String(r===0&&q===1?(e[10]>0.6?813:812):v),tx+q*(cs+12)+(cs+12)/2,ty+r*(cs+2)+cs/2+0.5)}
+    c.globalAlpha=1}
+  if(k!==hK){hK=k;$("#heroNarr").innerHTML="<b>"+(k+1)+" · "+L(ST[k].n)+"</b> · "+L(ST[k].narr);$$("#heroStations button").forEach((b,i)=>b.classList.toggle("cur",i===k))}
+}
+function heroDetail(i){
+  const s=ST[i];hSel=i;$$("#heroStations button").forEach((b,j)=>b.classList.toggle("sel",j===i));
+  const chips=s.broke.map(b=>'<span class="chip'+(b.ok?" ok":"")+'"><b>'+b.q+"</b>"+L(b.s)+" · "+L(b.t)+"</span>").join("");
+  $("#heroDetail").innerHTML="<h3>"+(i+1)+" · "+L(s.n)+"</h3><dl><dt>"+L({zh:"做什么",en:"What it does"})+"</dt><dd>"+L(s.what)+"</dd><dt>"+L({zh:"关键参数",en:"Key parameters"})+"</dt><dd>"+L(s.par)+"</dd><dt>"+L({zh:"它假设",en:"It assumes"})+"</dt><dd>"+L(s.asm)+"</dd><dt>"+L({zh:"在我们这里断过",en:"Where it broke for us"})+"</dt><dd><div class=\"chips\">"+chips+"</div></dd></dl>";
+}
+function heroButtons(){
+  $("#heroStations").innerHTML=ST.map((s,i)=>'<button type="button" data-i="'+i+'"><span class="n">'+String(i+1).padStart(2,"0")+"</span><span>"+L(s.n)+"</span></button>").join("");
+  $$("#heroStations button").forEach(b=>b.onclick=()=>{const i=+b.dataset.i;hT=i*HSEG+HDW-0.001;hPlay=false;setPlayLabel();hK=-1;heroDetail(i);drawHero()});
+  hK=-1;heroDetail(hSel);
+}
+function setPlayLabel(){$("#heroPlay").innerHTML=hPlay?'<span class="zh">暂停</span><span class="en">Pause</span>':'<span class="zh">▶ 播放</span><span class="en">▶ Play</span>'}
+$("#heroPlay").onclick=()=>{hPlay=!hPlay;setPlayLabel();if(hPlay)hLast=0};
+function heroLoop(ts){if(hPlay&&hVisible){const dt=hLast?Math.min(0.05,(ts-hLast)/1000):0;hT=(hT+dt)%HLOOP;drawHero()}hLast=ts;requestAnimationFrame(heroLoop)}
+inView(heroCv,v=>{hVisible=v;hLast=0});
+onRedraw(()=>{heroButtons();hK=-1;drawHero();setPlayLabel()});
+
+/* ---------------- gene map ---------------- */
+const REG=[["V1",69,99],["V2",137,242],["V3",433,497],["V4",576,682],["V5",822,879],["V6",986,1043],["V7",1117,1173],["V8",1243,1294],["V9",1435,1465]];
+const PRIM=[{n:"338F · 341F · 357F",s:338,e:357,d:1},{n:"515F",s:515,e:533,d:1},{n:"969F",s:969,e:985,d:1},{n:"785R · 805R · 806R",s:785,e:806,d:-1},{n:"926R",s:909,e:926,d:-1},{n:"1406R",s:1390,e:1406,d:-1}];
+const GS=[
+ {id:"23013615",pr:"357F / 926R",ps:[341,357],pe:[909,926],plat:"454 Titanium",lay:{zh:"单端，反向读",en:"single-end, read in reverse"},reads:[[628,908,-1]],
+  note:{zh:"从 926R 往回读（87% reads 反向，Q08）；ENA 的质量分数被替换过（Q01），改从 NCBI 取；固定截断 280 nt（E4）。",en:"Read back from 926R (87 % of reads reversed, Q08); ENA's quality scores were replaced (Q01), so reads came from NCBI; fixed cut at 280 nt (E4)."}},
+ {id:"28174747",pr:"515F / 806R",ps:[515,533],pe:[787,806],plat:"HiSeq 2000",lay:{zh:"单端 1×101",en:"single-end 1×101"},reads:[[534,634,1]],
+  note:{zh:"reads 只有 101 nt，盖不住整个 V4；引物已被切掉（Q09）；QC 长度检查误判（E15）。",en:"Reads are only 101 nt and cannot span V4; primers were already removed (Q09); the QC length check misfired (E15)."}},
+ {id:"29335008",pr:"969F / 1406R",ps:[969,985],pe:[1390,1406],plat:"MiSeq",lay:{zh:"双端 2×301",en:"paired 2×301"},reads:[[986,1269,1],[1106,1389,-1]],
+  note:{zh:"唯一测 V6–V8 的研究，全是活检；留一研究验证时最差（AUROC 0.56）。",en:"The only V6–V8 study, all biopsies; the weakest when held out (AUROC 0.56)."}},
+ {id:"35756051",pr:"341F / 785R",ps:[341,357],pe:[785,805],plat:"MiSeq",lay:{zh:"双端 2×301，截到 281/178",en:"paired 2×301, cut to 281/178"},reads:[[358,638,1],[607,784,-1]],
+  note:{zh:"自动截断只会留 17 nt 重叠（Q06），改成 281/178；42/89 个 run 过滤后保留不到 20%。",en:"Automatic truncation would leave 17 nt of overlap (Q06), so 281/178; 42 of 89 runs keep under 20 % after filtering."}},
+ {id:"37661264",pr:"341F / 806R",ps:[341,357],pe:[787,806],plat:"MiSeq",lay:{zh:"双端 2×250",en:"paired 2×250"},reads:[[358,590,1],[557,786,-1]],
+  note:{zh:"论文没给引物，从 reads 里认出 341F/806R（Q14）；很多引物 5′ 端被截（Q12）。",en:"The paper gave no primers; 341F/806R were recognized in the reads (Q14); many primers had clipped 5′ ends (Q12)."}},
+ {id:"36111238",pr:"338F / 806R",ps:[338,357],pe:[787,806],plat:"MiSeq",lay:{zh:"双端 2×301 + 2×300，截到 271/257",en:"paired 2×301 + 2×300, cut to 271/257"},reads:[[358,628,1],[530,786,-1]],
+  note:{zh:"引物前有 8 nt spacer（Q11）；14 个 run 是 2×300，短 1 bp（Q05，E23）。",en:"An 8-nt spacer before the primer (Q11); 14 runs are 2×300, one base shorter (Q05, E23)."}},
+ {id:"37696680",pr:"341F / 785R",ps:[341,357],pe:[785,805],plat:"MiSeq",lay:{zh:"双端，约 2×250（已修剪）",en:"paired, about 2×250 (trimmed)"},reads:[[358,590,1],[555,784,-1]],
+  note:{zh:"ENA 的 FASTQ 来自 SRA Lite，质量分数丢了（Q01），改从 NCBI 取；只有病例（Q19）。",en:"ENA's FASTQ came from SRA Lite and had lost its quality scores (Q01), so reads came from NCBI; patients only (Q19)."}},
+ {id:"42349924",pr:"341F / 805R",ps:[341,357],pe:[785,805],plat:"MiSeq",lay:{zh:"双端 2×301",en:"paired 2×301"},reads:[[358,641,1],[505,784,-1]],
+  note:{zh:"所有对照在同一个 run（Q21），来自另一家医院和 BioProject；留一研究验证 AUROC 0.49。",en:"All controls in one run (Q21), from another hospital and BioProject; AUROC 0.49 when held out."}}
+];
+let geneSel=0;
+function drawGene(){
+  const gx=p=>176+p/1540*796,svg=$("#geneSvg");let s="";
+  s+='<rect x="0" y="0" width="1000" height="420" style="fill:var(--surface-2)"/>';
+  for(let p=0;p<=1500;p+=250){s+='<line x1="'+gx(p)+'" y1="18" x2="'+gx(p)+'" y2="26" style="stroke:var(--ink-3)"/><text x="'+gx(p)+'" y="14" text-anchor="middle" style="fill:var(--ink-3);font:11px '+FM+'">'+p+"</text>"}
+  s+='<text x="12" y="52" style="fill:var(--ink-2);font:600 12px '+FS+'">16S rRNA</text><rect x="'+gx(1)+'" y="34" width="'+(gx(1540)-gx(1))+'" height="26" rx="5" style="fill:var(--surface);stroke:var(--line)"/>';
+  for(const [n,a,b] of REG)s+='<rect x="'+gx(a)+'" y="34" width="'+(gx(b)-gx(a))+'" height="26" style="fill:var(--accent);opacity:.75"/><text x="'+(gx(a)+gx(b))/2+'" y="51" text-anchor="middle" style="fill:var(--surface);font:600 11px '+FM+'">'+n+"</text>";
+  s+='<text x="12" y="92" style="fill:var(--ink-2);font:600 12px '+FS+'">'+L({zh:"引物",en:"Primers"})+"</text>";
+  PRIM.forEach(p=>{const x1=gx(p.s),x2=gx(p.e),y=p.d>0?80:100;const tip=p.d>0?x2+6:x1-6;
+    s+='<polygon points="'+(p.d>0?x1:x2)+","+(y-4)+" "+(p.d>0?x2:x1)+","+(y-4)+" "+tip+","+y+" "+(p.d>0?x2:x1)+","+(y+4)+" "+(p.d>0?x1:x2)+","+(y+4)+'" style="fill:var(--ink-2)"/>';
+    s+='<text x="'+(x1+x2)/2+'" y="'+(p.d>0?y-8:y+16)+'" text-anchor="middle" style="fill:var(--ink-2);font:10.5px '+FM+'">'+p.n+"</text>"});
+  const y0=134,rh=34;
+  GS.forEach((g,i)=>{const y=y0+i*rh,sel=i===geneSel;
+    s+='<g data-i="'+i+'" style="cursor:pointer"><rect x="4" y="'+(y-4)+'" width="992" height="'+(rh-2)+'" rx="6" style="fill:'+(sel?"var(--accent-soft)":"transparent")+'"/>';
+    s+='<text x="12" y="'+(y+11)+'" style="fill:var(--ink);font:600 12.5px '+FM+'">'+g.id+'</text><text x="12" y="'+(y+24)+'" style="fill:var(--ink-3);font:10.5px '+FS+'">'+g.plat+" · "+g.pr+"</text>";
+    s+='<rect x="'+gx(g.ps[1]+1)+'" y="'+(y+6)+'" width="'+(gx(g.pe[0]-1)-gx(g.ps[1]+1))+'" height="10" rx="2" style="fill:var(--line)"/>';
+    s+='<rect x="'+gx(g.ps[0])+'" y="'+(y+6)+'" width="'+Math.max(2,gx(g.ps[1])-gx(g.ps[0]))+'" height="10" style="fill:var(--ink-3)"/><rect x="'+gx(g.pe[0])+'" y="'+(y+6)+'" width="'+Math.max(2,gx(g.pe[1])-gx(g.pe[0]))+'" height="10" style="fill:var(--ink-3)"/>';
+    g.reads.forEach(([a,b,d],j)=>{const ya=y+(j?24:19),x1=gx(a),x2=gx(b),col=d>0?"var(--b1)":"var(--b2)";
+      s+='<line x1="'+x1+'" y1="'+ya+'" x2="'+x2+'" y2="'+ya+'" style="stroke:'+col+';stroke-width:3"/><polygon points="'+(d>0?x2:x1)+","+(ya-4)+" "+(d>0?x2+6:x1-6)+","+ya+" "+(d>0?x2:x1)+","+(ya+4)+'" style="fill:'+col+'"/>'});
+    s+='<rect x="0" y="'+(y-4)+'" width="1000" height="'+(rh-2)+'" style="fill:transparent"/></g>'});
+  s+='<text x="'+gx(1540)+'" y="'+(y0+GS.length*rh+4)+'" text-anchor="end" style="fill:var(--ink-3);font:10.5px '+FS+'">'+L({zh:"蓝 = R1，橙 = R2（或单端 read），灰 = 引物，浅灰 = 扩增子",en:"blue = R1, orange = R2 (or the single read), grey = primer, light grey = amplicon"})+"</text>";
+  svg.innerHTML=s;
+  svg.querySelectorAll("g[data-i]").forEach(g=>{const f=()=>{if(geneSel!==+g.dataset.i){geneSel=+g.dataset.i;drawGene()}};g.addEventListener("mouseenter",f);g.addEventListener("click",f)});
+  const g=GS[geneSel],len=g.pe[0]-g.ps[1]-1;
+  $("#geneDetail").innerHTML='<h3 class="mono">'+g.id+"</h3><dl><dt>"+L({zh:"引物",en:"Primers"})+"</dt><dd>"+g.pr+" · "+L({zh:"扩增子内部",en:"amplicon interior"})+" "+(g.ps[1]+1)+"–"+(g.pe[0]-1)+" ("+len+" nt)</dd><dt>"+L({zh:"平台",en:"Platform"})+"</dt><dd>"+g.plat+" · "+L(g.lay)+"</dd><dt>"+L({zh:"特别之处",en:"What was special"})+"</dt><dd>"+L(g.note)+"</dd></dl>";
+}
+function colorSeq(s){return s.replace(/[ACGT]/g,b=>'<span class="'+b+'">'+b+"</span>")}
+function drawEnds(){
+  const a="…GTGGGGAGCAAACA",ap="GGATTAGATACCCTGGTAGTC",b="…GTGGGGAGCAAACA",bx="GG",bp="ATTAGATACCCTGGTAGTCC";
+  const lab1="35756051 (785R)",lab2="37661264 (806R)",pad=s=>s.padEnd(18," ");
+  const t=L({zh:"切掉引物以后：",en:"after primer removal:"});
+  $("#endBox").innerHTML=pad(lab1)+colorSeq(a)+'<span class="pr">'+ap+"</span>\n"+pad(lab2)+colorSeq(b)+'<span class="hl">'+colorSeq(bx)+'</span><span class="pr">'+bp+"</span>\n\n"+t+"\n"+pad("35756051")+colorSeq(a)+"\n"+pad("37661264")+colorSeq(b)+'<span class="hl">'+colorSeq(bx)+"</span>   ≠";
+}
+onRedraw(()=>{drawGene();drawEnds()});
+
+/* ---------------- FASTQ and quality ---------------- */
+const V4="TACGGAGGGTGCAAGCGTTAATCGGAATTACTGGGCGTAAAGCGCACGCAGGCGGTTTGTTAAGTCAGATGTGAAATCCCCGGGCTCAACCTGGGAACTGCATCTGATACTGGCAAGCTTGAGTCTCGTAGAGGGGGGTAGAATTCCAGGTGTAGCGGTGAAATGCGTAGAGATCTGGAGGAATACCGGTGGCGAAGGCGGCCCCCTGGACGAAGACTGACGCTCAGGTGCGAAAGCGTGGGGAGCAAACAGG";
+const QN=150,qReal=(()=>{const r=mulberry32(21),q=[];for(let i=0;i<QN;i++){let v=37.5-19*Math.pow(i/QN,2.6)+gauss(r)*1.6;if(i===97||i===131)v=12;q.push(Math.round(clamp(v,2,41)))}return q})();
+const BINS=[2,12,23,37];
+let qMode="real",qHover=-1;
+function qVals(){if(qMode==="lite")return qReal.map(()=>30);if(qMode==="binned")return qReal.map(q=>BINS.reduce((b,x)=>Math.abs(x-q)<Math.abs(b-q)?x:b,BINS[0]));return qReal}
+function drawQ(){
+  const q=qVals(),seq=V4.slice(0,QN);
+  $("#fastqBox").innerHTML='<span style="color:var(--ink-3)">@example_read_1 1:N:0</span>\n'+colorSeq(seq)+'\n<span style="color:var(--ink-3)">+</span>\n<span style="color:var(--ink-2)">'+q.map(v=>String.fromCharCode(v+33)).join("").replace(/&/g,"&amp;").replace(/</g,"&lt;")+"</span>";
+  const {c,w,h}=fit($("#qCv"),190,300),ink3=css("--ink-3"),line=css("--line"),bad=css("--bad"),acc=css("--accent");
+  const l=30,r=8,t=10,b=22,bw=(w-l-r)/QN,Y=v=>t+(h-t-b)*(1-v/42);
+  c.font=font(10.5,1);c.fillStyle=ink3;c.textAlign="right";c.textBaseline="middle";
+  for(const v of[10,20,30,40]){c.strokeStyle=line;c.lineWidth=1;c.beginPath();c.moveTo(l,Y(v));c.lineTo(w-r,Y(v));c.stroke();c.fillText("Q"+v,l-4,Y(v))}
+  for(let i=0;i<QN;i++){c.fillStyle=q[i]<20?bad:acc;c.globalAlpha=i===qHover?1:0.8;c.fillRect(l+i*bw+0.3,Y(q[i]),Math.max(1,bw-0.6),Y(0)-Y(q[i]))}c.globalAlpha=1;
+  c.textAlign="left";c.textBaseline="alphabetic";c.fillText("1",l,h-6);c.textAlign="right";c.fillText(L({zh:"碱基位置 ",en:"position "})+QN,w-r,h-6);
+  if(qHover>=0){const v=q[qHover],p=Math.pow(10,-v/10);const txt=L({zh:"第 ",en:"base "})+(qHover+1)+L({zh:" 位 ",en:" "})+seq[qHover]+" · Q"+v+" · p = "+(p<0.001?p.toExponential(1):p.toFixed(3));
+    c.font=font(11.5,1,500);const tw=c.measureText(txt).width+12,x=clamp(l+qHover*bw-tw/2,2,w-tw-2);c.fillStyle=css("--ink");rr(c,x,2,tw,19,5);c.fill();c.fillStyle=css("--bg");c.textAlign="left";c.textBaseline="middle";c.fillText(txt,x+6,12)}
+  // error-model points
+  const E=fit($("#qErrCv"),190,280),c2=E.c,w2=E.w,h2=E.h,l2=40,X2=v=>l2+(w2-l2-10)*v/42,Y2=lg=>10+(h2-32)*(-lg)/4.3;
+  c2.font=font(10.5,1);c2.fillStyle=ink3;c2.textAlign="right";c2.textBaseline="middle";
+  for(const lg of[-1,-2,-3,-4]){c2.strokeStyle=line;c2.beginPath();c2.moveTo(l2,Y2(lg));c2.lineTo(w2-10,Y2(lg));c2.stroke();c2.fillText("1e"+lg,l2-4,Y2(lg))}
+  c2.textAlign="center";for(const v of[10,20,30,40])c2.fillText("Q"+v,X2(v),h2-10);
+  c2.setLineDash([4,4]);c2.strokeStyle=ink3;c2.beginPath();for(let v=2;v<=41;v++){const x=X2(v),y=Y2(-v/10);v===2?c2.moveTo(x,y):c2.lineTo(x,y)}c2.stroke();c2.setLineDash([]);
+  const trueErr=qReal.map(v=>Math.pow(10,-v/10));const pts=[];
+  if(qMode==="real"){const by={};qReal.forEach((v,i)=>{(by[v]=by[v]||[]).push(trueErr[i])});for(const v in by)pts.push([+v,Math.log10(by[v].reduce((s,x)=>s+x,0)/by[v].length)])}
+  else if(qMode==="lite"){pts.push([30,Math.log10(trueErr.reduce((s,x)=>s+x,0)/QN)])}
+  else{const by={};q.forEach((v,i)=>{(by[v]=by[v]||[]).push(trueErr[i])});for(const v in by)pts.push([+v,Math.log10(by[v].reduce((s,x)=>s+x,0)/by[v].length)])}
+  c2.fillStyle=acc;for(const [v,lg] of pts){c2.beginPath();c2.arc(X2(v),Y2(lg),qMode==="real"?3:5,0,7);c2.fill()}
+  c2.fillStyle=ink3;c2.textAlign="left";c2.font=font(10.5,0);c2.fillText(L({zh:"虚线 = 质量分数的字面意思；点 = 实际错误率",en:"dashed = what the score claims; dots = actual error rate"}),l2+4,Y2(-0.25));
+  const ee=q.reduce((s,v)=>s+Math.pow(10,-v/10),0),eeTrue=trueErr.reduce((s,x)=>s+x,0);
+  const msg={real:{zh:"这条 read 的 EE = "+ee.toFixed(2)+"：预计约有 "+ee.toFixed(1)+" 个碱基读错，主要在尾巴（红柱）。错误模型能看到“低分碱基错得多”，曲线有很多点可以拟合。",en:"This read's EE = "+ee.toFixed(2)+": about "+ee.toFixed(1)+" wrong bases expected, mostly in the tail (red bars). The error model sees that low scores mean more errors, with many points to fit."},
+    lite:{zh:"每个碱基都标成 Q30，EE 只有 "+ee.toFixed(2)+"，看起来很好，其实这条 read 预计有 "+eeTrue.toFixed(1)+" 个错误。错误模型只剩一个点，只能学到一个平均错误率，分不清好碱基和坏碱基（去噪一节能看到后果）。23013615 和 37696680 的 ENA 文件就是这样（Q01），我们改从 NCBI 取原始质量分数。",en:"Every base is marked Q30, so EE is only "+ee.toFixed(2)+" and the read looks fine, though about "+eeTrue.toFixed(1)+" errors are expected. The error model is left with one point: it learns one average rate and cannot tell good bases from bad (the denoising section shows what follows). ENA's files for 23013615 and 37696680 looked like this (Q01); we took the original scores from NCBI instead."},
+    binned:{zh:"只剩 4 个值（NovaSeq 的做法），EE = "+ee.toFixed(2)+"。错误模型只能用 4 个点拟合曲线，拟合可能很怪。目前管线遇到分箱质量会停下来等人看（Q15）。",en:"Only 4 values remain (NovaSeq does this), EE = "+ee.toFixed(2)+". The error model has 4 points to fit its curve, and the fit can be odd. For now the pipeline stops for a person when it sees binned scores (Q15)."}};
+  $("#qNarr").textContent=L(msg[qMode]);
+}
+$$("[data-qmode]").forEach(b=>b.onclick=()=>{qMode=b.dataset.qmode;pressGroup("[data-qmode]","data-qmode",qMode);drawQ()});
+$("#qCv").addEventListener("mousemove",ev=>{const rc=ev.target.getBoundingClientRect(),x=ev.clientX-rc.left,bw=(rc.width-38)/QN,i=Math.floor((x-30)/bw);const n=i>=0&&i<QN?i:-1;if(n!==qHover){qHover=n;drawQ()}});
+$("#qCv").addEventListener("mouseleave",()=>{qHover=-1;drawQ()});
+onRedraw(drawQ);
+
+/* ---------------- truncation lab ---------------- */
+const eeF=(ref,at,g)=>t=>ref*Math.pow(t/at,g);
+function scenA(seed){const r=mulberry32(seed),runs=[];for(let i=0;i<60;i++){const short=i>=46,ctl=short?(i-46)<10:i<10,len=short?300:301;
+  const rm1=Math.exp(0.3*gauss(r)),rm2=Math.exp(0.35*gauss(r)),reads=[];
+  for(let k=0;k<300;k++){const u=r(),sp=u<0.965?8:u<0.99?7:6;reads.push([len-sp-19,len-sp-20,rm1*Math.exp(0.7*gauss(r)-0.245),rm2*Math.exp(0.7*gauss(r)-0.245)])}
+  runs.push({batch:short?1:0,ctl,reads,e1:eeF(0.8,274,4),e2:eeF(2.0,260,4)})}return{runs,amp:429,id:"A"}}
+function scenB(seed){const r=mulberry32(seed),runs=[];for(let i=0;i<89;i++){const bad=r()<0.5,ctl=r()<0.35;
+  const rm1=Math.exp(0.3*gauss(r)),rm2=Math.exp(0.45*gauss(r)),reads=[];
+  for(let k=0;k<300;k++){const sp=Math.floor(r()*4);reads.push([301-sp-17,301-sp-21,rm1*Math.exp(0.7*gauss(r)-0.245),rm2*Math.exp(0.7*gauss(r)-0.245)])}
+  runs.push({batch:0,ctl,bad,reads,e1:eeF(0.8,281,4),e2:bad?eeF(8,178,3):eeF(1.3,178,3.5)})}return{runs,amp:427,id:"B"}}
+const SCEN={A:scenA(3),B:scenB(5)};
+const PRESETS={A:[{f:274,r:260,e:2,t:{zh:"ampliseq 自动截断 274/260",en:"ampliseq automatic 274/260"}},{f:271,r:257,e:2,t:{zh:"我们的上限 271/257",en:"our cap 271/257"}},{f:240,r:220,e:2,t:{zh:"更保守 240/220",en:"more cautious 240/220"}}],
+  B:[{f:281,r:178,e:2,t:{zh:"我们用的 281/178",en:"what we ran 281/178"}},{f:281,r:160,e:2,t:{zh:"R2 再短些 281/160",en:"shorter R2 281/160"}},{f:281,r:140,e:2,t:{zh:"R2 太短 281/140",en:"R2 too short 281/140"}}]};
+let tScen="A",tF=274,tR=260,tE=2;
+function tRetention(){const sc=SCEN[tScen],ov=tF+tR-sc.amp;return sc.runs.map(run=>{if(ov<12)return 0;const E1=run.e1(tF),E2=run.e2(tR);let k=0;for(const d of run.reads){if(d[0]<tF||d[1]<tR)continue;if(d[2]*E1>tE||d[3]*E2>tE)continue;k++}return k/run.reads.length})}
+function setT(f,r,e){tF=f;tR=r;tE=e;$("#tF").value=f;$("#tR").value=r;$("#tE").value=e;drawT()}
+function tPresetButtons(){$("#tPresets").innerHTML='<span class="muted">'+L({zh:"预设：",en:"Presets:"})+"</span>"+PRESETS[tScen].map((p,i)=>'<button class="btn" type="button" data-p="'+i+'">'+L(p.t)+"</button>").join("");
+  $$("#tPresets button").forEach(b=>b.onclick=()=>{const p=PRESETS[tScen][+b.dataset.p];setT(p.f,p.r,p.e)})}
+function drawT(){
+  $("#tFo").textContent=tF;$("#tRo").textContent=tR;$("#tEo").textContent=tE;
+  const sc=SCEN[tScen],ret=tRetention(),ov=tF+tR-sc.amp;
+  const order=sc.runs.map((r,i)=>i).sort((a,b)=>(sc.runs[a].batch-sc.runs[b].batch)||(sc.runs[b].ctl-sc.runs[a].ctl)||(ret[b]-ret[a]));
+  const {c,w,h}=fit($("#tCv"),270,320),ink3=css("--ink-3"),line=css("--line"),bad=css("--bad"),b1=css("--b1"),b2=css("--b2");
+  const l=40,r=10,t=12,b=26,Y=v=>t+(h-t-b)*(1-v),X=j=>l+(w-l-r)*(j+0.5)/order.length;
+  c.font=font(10.5,1);c.fillStyle=ink3;c.textAlign="right";c.textBaseline="middle";
+  for(const v of[0,0.2,0.5,1]){c.strokeStyle=line;c.lineWidth=1;c.setLineDash(v===0.2?[5,4]:[]);c.strokeStyle=v===0.2?bad:line;c.beginPath();c.moveTo(l,Y(v));c.lineTo(w-r,Y(v));c.stroke();c.fillText(Math.round(v*100)+"%",l-5,Y(v))}c.setLineDash([]);
+  c.textAlign="left";c.fillStyle=bad;c.fillText(L({zh:"QC 线 20%",en:"QC line 20 %"}),l+4,Y(0.2)-8);
+  if(tScen==="A"){const split=order.findIndex(i=>sc.runs[i].batch===1);c.fillStyle=ink3;c.textAlign="center";c.fillText("2×301 · 46 runs",(l+X(split-1))/2,h-8);c.fillText("2×300 · 14",(X(split)+w-r)/2,h-8);
+    c.strokeStyle=line;c.beginPath();c.moveTo((X(split-1)+X(split))/2,t);c.lineTo((X(split-1)+X(split))/2,h-b);c.stroke()}
+  else{c.fillStyle=ink3;c.textAlign="center";c.fillText("2×301 · 89 runs",(l+w-r)/2,h-8)}
+  order.forEach((i,j)=>{const run=sc.runs[i],x=X(j),y=Y(ret[i]),col=run.batch?b2:b1;c.lineWidth=1.6;
+    if(run.ctl){c.strokeStyle=col;c.strokeRect(x-3.5,y-3.5,7,7)}else{c.fillStyle=col;c.beginPath();c.arc(x,y,3.8,0,7);c.fill()}});
+  $("#tLegend").innerHTML='<span><i style="background:var(--b1)"></i>'+(tScen==="A"?"2×301":L({zh:"所有 run",en:"all runs"}))+"</span>"+(tScen==="A"?'<span><i style="background:var(--b2)"></i>2×300</span>':"")+"<span>● "+L({zh:"病例（UC）",en:"case (UC)"})+"</span><span>□ "+L({zh:"对照",en:"control"})+"</span><span>"+L({zh:"模拟数据：每个 run 300 条 reads",en:"simulated: 300 reads per run"})+"</span>";
+  // overlap meter
+  const O=fit($("#tOv"),74,320),c2=O.c,w2=O.w,ampL=sc.amp,x0=20,x1=w2-20,S=x1-x0,pX=p=>x0+S*p/ampL;
+  c2.fillStyle=css("--surface-2");rr(c2,x0,30,S,12,3);c2.fill();
+  const f1=Math.min(tF,ampL),f2=Math.min(tR,ampL);
+  c2.fillStyle=b1;c2.fillRect(pX(0),24,pX(f1)-pX(0),5);c2.fillStyle=b2;c2.fillRect(pX(ampL-f2),44,pX(ampL)-pX(ampL-f2),5);
+  if(ov>0){c2.fillStyle=ov>=12?css("--ok"):bad;c2.globalAlpha=0.35;c2.fillRect(pX(ampL-f2),30,pX(f1)-pX(ampL-f2),12);c2.globalAlpha=1}
+  c2.font=font(11,1,500);c2.textBaseline="middle";c2.textAlign="left";c2.fillStyle=b1;c2.fillText("R1 "+tF,x0,13);c2.textAlign="right";c2.fillStyle=b2;c2.fillText("R2 "+tR,x1,62);
+  c2.textAlign="center";c2.fillStyle=ov>=12?css("--ok"):bad;c2.fillText(L({zh:"重叠 = ",en:"overlap = "})+tF+" + "+tR+" − "+ampL+" = "+ov+" nt"+(ov<12?L({zh:"（< 12，无法拼接）",en:" (< 12, cannot merge)"}):""),(x0+x1)/2,13);
+  // stats
+  const grp=f=>sc.runs.map((r,i)=>[r,ret[i]]).filter(([r])=>f(r)).map(x=>x[1]);
+  const ctl=grp(r=>r.ctl),cas=grp(r=>!r.ctl),p=mannWhitneyP(ctl,cas),low=ret.filter(x=>x<0.2).length;
+  let st="";
+  if(tScen==="A"){st+='<div class="stat"><b>'+pct(median(grp(r=>!r.batch)))+"</b><span>"+L({zh:"2×301 中位保留率",en:"2×301 median kept"})+'</span></div><div class="stat"><b class="'+(median(grp(r=>r.batch))<0.2?"bad":"")+'">'+pct(median(grp(r=>r.batch)))+"</b><span>"+L({zh:"2×300 中位保留率",en:"2×300 median kept"})+"</span></div>"}
+  else st+='<div class="stat"><b>'+pct(median(ret))+"</b><span>"+L({zh:"中位保留率",en:"median kept"})+"</span></div>";
+  st+='<div class="stat"><b class="'+(low?"bad":"")+'">'+low+" / "+ret.length+"</b><span>"+L({zh:"保留不到 20% 的 run",en:"runs under 20 %"})+'</span></div><div class="stat"><b class="'+(p<0.01?"bad":"")+'">'+pct(median(ctl))+" vs "+pct(median(cas))+"</b><span>"+L({zh:"对照 vs 病例（p = ",en:"controls vs cases (p = "})+(p<1e-4?p.toExponential(0):p.toFixed(3))+")</span></div>";
+  $("#tStats").innerHTML=st;
+  let n;
+  if(ov<12)n={zh:"R1 和 R2 接不上了：重叠只有 "+ov+" nt，比 12 nt 少，所有 reads 在拼接时丢掉。截断不能太狠。",en:"R1 and R2 no longer meet: the overlap is only "+ov+" nt, under 12, so every read is lost at merging. The cut cannot be too aggressive."};
+  else if(tScen==="A"&&median(grp(r=>r.batch))<0.1)n={zh:"悬崖：2×300 那批 R1 切掉 8 nt spacer 和 19 nt 引物后只有 273 nt，比 truncF "+tF+" 短，整条丢掉。这 14 个 run 里 10 个是对照，所以丢失和标签重合（p 很小）。36111238 实测：2.2% 对 60–66%（E23）。把 truncF 降到 273 以下试试。",en:"The cliff: after the 8-nt spacer and 19-nt primer, R1 in the 2×300 batch has 273 nt, shorter than truncF "+tF+", so every read goes. Ten of those 14 runs are controls, so the loss lines up with the label (tiny p). Measured on 36111238: 2.2 % vs 60–66 % (E23). Try truncF below 274."};
+  else if(tScen==="A")n={zh:"两批都保住了。truncF 每降 1 nt，丢掉的只是尾巴上的一个碱基；但越过 274 那一刻，短批次一下子全没了。这就是悬崖和斜坡的区别。我们在 preflight 里加了“按最短批次封顶”的规则（Q05），36111238 重跑后两批都是 65.2%。",en:"Both batches survive. Each base taken off truncF costs only one tail base; but the moment it passes 274 the short batch vanishes. That is the difference between a cliff and a slope. Preflight now caps truncation by the shortest batch (Q05); after the rerun both batches of 36111238 kept 65.2 %."};
+  else n={zh:"这里没有悬崖，是斜坡：一半的 run 的 R2 尾巴很差，截得越长 EE 越大。R2 截短能多保留 reads，但重叠也在变少。真实的 35756051：281/178 下中位保留率 38%，42/89 个 run 不到 20%，原因还没查清（模拟只是示意）。",en:"No cliff here, a slope: half the runs have a poor R2 tail, so the longer the cut, the larger the EE. A shorter R2 keeps more reads, but the overlap shrinks too. The real 35756051 at 281/178: median 38 % kept, 42 of 89 runs under 20 %, cause not traced yet (the simulation is only a sketch)."};
+  $("#tNarr").textContent=L(n);
+}
+$$("[data-scen]").forEach(b=>b.onclick=()=>{tScen=b.dataset.scen;pressGroup("[data-scen]","data-scen",tScen);tPresetButtons();const p=PRESETS[tScen][0];setT(p.f,p.r,p.e)});
+for(const [id,fn] of [["#tF",v=>tF=v],["#tR",v=>tR=v],["#tE",v=>tE=v]])$(id).addEventListener("input",ev=>{fn(+ev.target.value);drawT()});
+$("#tF").value=tF;$("#tR").value=tR;$("#tE").value=tE;
+onRedraw(()=>{tPresetButtons();drawT()});
+</script>
+<script>
+"use strict";
+/* ---------------- DADA2 toy: divisive partitioning with the abundance p-value ---------------- */
+const DL=60,LF=(()=>{const n=60001,a=new Float64Array(n);for(let i=1;i<n;i++)a[i]=a[i-1]+Math.log(i);return a})();
+function logTail(a,mu){if(!(mu>0))return -1e3;if(a<=1||a<=mu)return 0;const lmu=Math.log(mu);let s=1,r=1;for(let k=a+1;k<a+80;k++){r*=mu/k;s+=r;if(r<1e-12*s)break}
+  return Math.min(0,-mu+a*lmu-LF[a]+Math.log(s)-Math.log(-Math.expm1(-mu)))}
+function errProfile(e0,eT){return Array.from({length:DL},(_,i)=>e0+(eT-e0)*Math.pow(i/(DL-1),3))}
+function makeTruth(rng){const B="ACGT",base=()=>B[Math.floor(rng()*4)],A=Array.from({length:DL},base).join("");
+  const mut=(s,d)=>{const r=s.split(""),pos=new Set();while(pos.size<d)pos.add(Math.floor(rng()*DL*0.8));pos.forEach(p=>{let b;do b=base();while(b===r[p]);r[p]=b});return r.join("")};
+  const Bs=mut(A,5),C=mut(A,1),D=mut(Bs,2),E=mut(A,1);
+  return[{name:"A",seq:A,n:40000},{name:"B",seq:Bs,n:8000},{name:"C",seq:C,n:600},{name:"D",seq:D,n:60},{name:"E",seq:E,n:80}]}
+function sequenceReads(truth,prof,rng){const B="ACGT",m=new Map();for(const t of truth){for(let r=0;r<t.n;r++){let s="";for(let i=0;i<DL;i++){let b=t.seq[i];if(rng()<prof[i]){let nb;do nb=B[Math.floor(rng()*4)];while(nb===b);b=nb}s+=b}m.set(s,(m.get(s)||0)+1)}}
+  return[...m.entries()].sort((x,y)=>y[1]-x[1]).map(([s,a])=>({s,a}))}
+function dadaInit(uniq,model){const S0=model.reduce((s,e)=>s+Math.log(1-e),0),dl=model.map(e=>Math.log(e/3)-Math.log(1-e));
+  const st={uniq,model,S0,dl,centers:[],lam:[],assign:new Int32Array(uniq.length),dist:new Int16Array(uniq.length),n:[],done:false,last:null};addCenter(st,0);return st}
+function lamTo(st,cs){const U=st.uniq.length,out=new Float64Array(U);for(let k=0;k<U;k++){const s=st.uniq[k].s;let v=st.S0;for(let i=0;i<DL;i++)if(s.charCodeAt(i)!==cs.charCodeAt(i))v+=st.dl[i];out[k]=v}return out}
+function hamming(a,b){let d=0;for(let i=0;i<DL;i++)if(a.charCodeAt(i)!==b.charCodeAt(i))d++;return d}
+function recount(st){st.n=st.centers.map(()=>0);for(let k=0;k<st.uniq.length;k++)st.n[st.assign[k]]+=st.uniq[k].a}
+function shuffle(st){if(st.n.length!==st.centers.length)recount(st);const C=st.centers.length,isC=new Map(st.centers.map((c,i)=>[c,i])),ln=st.n.map(x=>Math.log(Math.max(x,1)));
+  for(let k=0;k<st.uniq.length;k++){if(isC.has(k)){st.assign[k]=isC.get(k);continue}let bi=0,bv=-Infinity;for(let c=0;c<C;c++){const v=ln[c]+st.lam[c][k];if(v>bv){bv=v;bi=c}}st.assign[k]=bi}recount(st)}
+function addCenter(st,j){st.centers.push(j);st.lam.push(lamTo(st,st.uniq[j].s));shuffle(st);shuffle(st);for(let k=0;k<st.uniq.length;k++)st.dist[k]=hamming(st.uniq[k].s,st.uniq[st.centers[st.assign[k]]].s)}
+function candidate(st){const isC=new Set(st.centers);let best=null;for(let k=0;k<st.uniq.length;k++){if(isC.has(k))continue;const a=st.uniq[k].a;if(a<2)continue;const c=st.assign[k],mu=st.n[c]*Math.exp(st.lam[c][k]),lp=logTail(a,mu);if(!best||lp<best.lp)best={k,lp,mu,a,c,d:st.dist[k]}}return best}
+const D={seed:11,mode:"honest",tail:3,omega:-40,truth:null,uniq:null,st:null,timer:null,pos:null,prev:null,anim:0,cand:null,msg:null};
+function dReads(){const rng=mulberry32(D.seed),truth=makeTruth(rng),prof=errProfile(0.001,D.tail/100);D.truth=truth;D.prof=prof;D.uniq=sequenceReads(truth,prof,rng)}
+function dModel(){const m=D.prof.reduce((s,x)=>s+x,0)/DL;return D.mode==="flat"?D.prof.map(()=>m):D.prof.slice()}
+function dInit(newReads){dStop();if(newReads||!D.uniq)dReads();D.st=dadaInit(D.uniq,dModel());D.prev=null;D.cand=candidate(D.st);D.msg={zh:"起点：所有 "+D.uniq.length.toLocaleString()+" 种不同序列都归在最多的那个序列（A）名下。点“单步”看 DADA2 检验下一个最可疑的序列。",en:"Start: all "+D.uniq.length.toLocaleString()+" distinct sequences belong to the most abundant one (A). Press Step to see DADA2 test the next most suspicious sequence."};layoutD(true);drawD()}
+function trueName(s){const t=D.truth.find(t=>t.seq===s);return t?t.name:null}
+function dStep(){const st=D.st;if(st.done)return false;const b=candidate(st),lo=D.omega*Math.LN10;
+  if(!b||b.lp>=lo){st.done=true;const p10=b?b.lp/Math.LN10:0;D.msg={zh:"停止：最可疑的候选（a = "+(b?b.a:0)+"，预期 μ = "+(b?b.mu.toFixed(1):"–")+"）的 p = "+sci(p10)+"，不小于 Ω_A。剩下的都可以用测序错误解释。",en:"Stop: the most suspicious candidate (a = "+(b?b.a:0)+", expected μ = "+(b?b.mu.toFixed(1):"–")+") has p = "+sci(p10)+", not below Ω_A. Everything left can be explained as sequencing errors."};D.cand=null;layoutD(false);drawD();return false}
+  const from=trueName(D.uniq[st.centers[b.c]].s)||("#"+(b.c+1)),nm=trueName(D.uniq[b.k].s);
+  D.msg={zh:"第 "+st.centers.length+" 步：一个与 "+from+" 差 "+b.d+" 个碱基的序列。如果只是 "+from+" 的测序错误，预计 μ = "+b.mu.toFixed(1)+" 条；实际 a = "+b.a+" 条。p = "+sci(b.lp/Math.LN10)+" < Ω_A → 新 ASV。"+(nm?"它确实是真实序列 "+nm+"。":"可它其实只是测序错误，是假 ASV。"),
+         en:"Step "+st.centers.length+": a sequence "+b.d+" base(s) from "+from+". If it were only an error of "+from+", we would expect μ = "+b.mu.toFixed(1)+" copies; we see a = "+b.a+". p = "+sci(b.lp/Math.LN10)+" < Ω_A → new ASV. "+(nm?"It really is true sequence "+nm+".":"In fact it is only a sequencing error: a spurious ASV.")};
+  addCenter(st,b.k);D.cand=candidate(st);layoutD(false);drawD();return true}
+function dStop(){if(D.timer){clearTimeout(D.timer);D.timer=null}$("#dRun").innerHTML='<span class="zh">▶ 运行</span><span class="en">▶ Run</span>'}
+function dRun(){if(D.timer){dStop();return}if(D.st.done)return;$("#dRun").innerHTML='<span class="zh">⏸ 暂停</span><span class="en">⏸ Pause</span>';
+  if(REDUCED){let g=0;while(dStep()&&g<300)g++;dStop();return}
+  const tick=()=>{if(!dStep()){dStop();return}D.timer=setTimeout(tick,D.st.centers.length>6?260:750)};tick()}
+function hashA(k){let x=Math.imul(k+1,2654435761)>>>0;x^=x>>>15;return (x%10000)/10000}
+function layoutD(reset){const cv=$("#dCv"),w=Math.max(320,cv.parentElement.clientWidth),h=430,st=D.st,C=st.centers.length;
+  const cx=w*0.5,cy=h*0.52,cp=[];for(let i=0;i<C;i++){if(i===0){cp.push([cx,cy]);continue}const ang=i*2.39996+0.6,rad=Math.min(w,h)*0.17+Math.sqrt(i)*Math.min(w,h)*0.055;cp.push([cx+Math.cos(ang)*rad*(w/h>1.4?1.45:1),cy+Math.sin(ang)*rad])}
+  const pos=new Float32Array(st.uniq.length*2);
+  for(let k=0;k<st.uniq.length;k++){const c=st.assign[k],[x0,y0]=cp[c];if(st.centers[c]===k){pos[2*k]=x0;pos[2*k+1]=y0;continue}
+    const R=bubR(st.n[c]>0?st.uniq[st.centers[c]].a:1),d=Math.min(st.dist[k],6),ang=hashA(k)*Math.PI*2,rad=R+5+d*(C>1?7:11)+hashA(k*7+3)*5;pos[2*k]=x0+Math.cos(ang)*rad;pos[2*k+1]=y0+Math.sin(ang)*rad}
+  D.prev=reset||!D.pos||D.pos.length!==pos.length?pos:D.pos.slice();D.pos=pos;D.cp=cp;D.anim=performance.now();if(!REDUCED)requestAnimationFrame(animD)}
+function animD(){drawD();if(performance.now()-D.anim<600)requestAnimationFrame(animD)}
+function bubR(a){return 1.2+1.9*Math.pow(Math.log10(a+1),1.35)}
+function partColor(i){if(i===0)return css("--accent");const hue=(i*137.5+200)%360;return"hsl("+hue+" 62% 52%)"}
+function drawD(){
+  if(!D.st)return;const {c,w,h}=fit($("#dCv"),430,320),st=D.st,f=REDUCED?1:ease((performance.now()-D.anim)/600);
+  const ink=css("--ink"),ink3=css("--ink-3"),ok=css("--ok"),bad=css("--bad");
+  const P=k=>[D.prev[2*k]+(D.pos[2*k]-D.prev[2*k])*f,D.prev[2*k+1]+(D.pos[2*k+1]-D.prev[2*k+1])*f];
+  const isC=new Set(st.centers);
+  for(let k=st.uniq.length-1;k>=0;k--){if(isC.has(k))continue;const [x,y]=P(k),a=st.uniq[k].a;c.globalAlpha=a<2?0.3:0.75;c.fillStyle=partColor(st.assign[k]);c.beginPath();c.arc(x,y,a<2?1:bubR(a),0,7);c.fill()}
+  c.globalAlpha=1;
+  if(D.cand){const [x,y]=P(D.cand.k),R=bubR(D.cand.a)+5;c.strokeStyle=ink;c.lineWidth=1.5;c.setLineDash([3,3]);c.beginPath();c.arc(x,y,R,0,7);c.stroke();c.setLineDash([])}
+  st.centers.forEach((k,i)=>{const [x,y]=P(k),a=st.uniq[k].a,R=bubR(a),tn=trueName(st.uniq[k].s);
+    c.fillStyle=partColor(i);c.beginPath();c.arc(x,y,R,0,7);c.fill();c.lineWidth=2.5;c.strokeStyle=tn?ok:bad;if(!tn)c.setLineDash([3,2]);c.beginPath();c.arc(x,y,R+3,0,7);c.stroke();c.setLineDash([]);
+    c.font=font(11,1,600);c.textAlign="center";c.textBaseline="middle";c.fillStyle=ink;c.fillText(tn?tn+" · "+a.toLocaleString():"✗ "+a,x,y-R-11)});
+  const found=D.truth.filter(t=>st.centers.some(k=>st.uniq[k].s===t.seq)).map(t=>t.name),spur=st.centers.filter(k=>!trueName(st.uniq[k].s)).length,missed=D.truth.map(t=>t.name).filter(n=>!found.includes(n));
+  $("#dStats").innerHTML='<div class="stat"><b>'+D.uniq.length.toLocaleString()+"</b><span>"+L({zh:"不同的序列（去重后）",en:"distinct sequences"})+'</span></div><div class="stat"><b>'+st.centers.length+"</b><span>"+L({zh:"推断出的 ASV",en:"ASVs inferred"})+'</span></div><div class="stat"><b class="good">'+found.length+" / 5</b><span>"+L({zh:"找到的真实序列",en:"true sequences found"})+'</span></div><div class="stat"><b class="'+(spur?"bad":"")+'">'+spur+"</b><span>"+L({zh:"假 ASV（其实是测序错误）",en:"spurious ASVs (really errors)"})+'</span></div><div class="stat"><b>'+(missed.join(", ")||"—")+"</b><span>"+L({zh:"漏掉的真实序列",en:"true sequences missed"})+"</span></div>";
+  $("#dNarr").textContent=L(D.msg)+(st.done&&missed.includes("E")&&!spur?L({zh:" E 只有 80 条、和 A 只差 1 个碱基，数量和 A 的测序错误差不多，DADA2 分不出来。把 Ω_A 调松一点（比如 1e-10）试试。",en:" E has only 80 reads and differs from A by one base, about as many as A's own errors would make, so DADA2 cannot separate it. Try a looser Ω_A (say 1e-10)."}):"")+(st.done&&spur?L({zh:" 质量分数被抹平后，模型以为尾巴和开头一样可信：尾巴上常见的错误看起来“太多了，不可能是错误”，于是变成假 ASV。",en:" With the scores flattened, the model trusts the tail as much as the start: the common tail errors look too frequent to be errors and become spurious ASVs."}):"");
+  $("#dLegend").innerHTML="<span>"+L({zh:"圆 = 一种序列，大小 = 条数，颜色 = 归到哪个 ASV；离中心越远 = 差的碱基越多",en:"circle = one distinct sequence, size = reads, color = the ASV it belongs to; farther out = more bases differ"})+'</span><span style="color:var(--ok)">◯ '+L({zh:"真实序列",en:"true sequence"})+'</span><span style="color:var(--bad)">◌ '+L({zh:"假 ASV",en:"spurious ASV"})+"</span><span>⋯ "+L({zh:"下一个候选",en:"next candidate"})+"</span>";
+}
+function dOptions(){const o=$("#dMode").options;o[0].textContent=L({zh:"诚实：质量分数真实，尾巴错得多",en:"Honest: real scores, the tail is worse"});o[1].textContent=L({zh:"SRA Lite：所有碱基同一个分数，只学到平均错误率",en:"SRA Lite: one score for every base, one average error rate"});$("#dMode").value=D.mode}
+$("#dMode").onchange=e=>{D.mode=e.target.value;dInit(false)};
+$("#dTail").value=D.tail;$("#dTail").addEventListener("input",e=>{D.tail=+e.target.value;$("#dTailo").textContent=D.tail+"%"});$("#dTail").addEventListener("change",()=>dInit(true));
+$("#dOmega").value=D.omega;$("#dOmega").addEventListener("input",e=>{D.omega=+e.target.value;$("#dOmegao").textContent=D.omega});$("#dOmega").addEventListener("change",()=>dInit(false));
+$("#dTailo").textContent=D.tail+"%";$("#dOmegao").textContent=D.omega;
+$("#dRun").onclick=dRun;$("#dStep").onclick=()=>{dStop();dStep()};$("#dReset").onclick=()=>dInit(false);$("#dReseq").onclick=()=>{D.seed++;dInit(true)};
+onRedraw(()=>{dOptions();if(!D.st)dInit(true);else{layoutD(true);drawD()}});
+
+/* ---------------- chimera animation ---------------- */
+let chiT0=0,chiRun=false;
+function drawChi(){
+  const {c,w,h}=fit($("#chiCv"),170,280),t=REDUCED?9:(performance.now()-chiT0)/1000,N=24,cw=Math.min(16,(w-40)/N),x0=(w-N*cw)/2,b1=css("--b1"),b2=css("--b2"),ink3=css("--ink-3"),bad=css("--bad");
+  const row=(y,col,n,from)=>{for(let i=from||0;i<n;i++){c.fillStyle=typeof col==="function"?col(i):col;rr(c,x0+i*cw+1,y,cw-2,14,2);c.fill()}};
+  c.font=font(11,0,600);c.textBaseline="middle";c.textAlign="left";c.fillStyle=ink3;
+  c.fillText(L({zh:"亲本 A",en:"parent A"}),4,22);c.fillText(L({zh:"亲本 B",en:"parent B"}),4,h-30);
+  row(16,b1,N);row(h-36,b2,N);
+  const half=N/2,p1=clamp(t/2,0,1),jump=clamp((t-2)/0.8,0,1),p2=clamp((t-2.8)/1.8,0,1),yMid=h/2-7;
+  const made=Math.floor(p1*half)+(p2>0?Math.floor(p2*half):0);
+  row(yMid,i=>i<half?b1:b2,Math.min(N,made));
+  let px,py;if(jump<=0){px=x0+p1*half*cw;py=16+7}else if(p2<=0){px=x0+half*cw;py=23+(h-36-16)*ease(jump)}else{px=x0+(half+p2*half)*cw;py=h-36+7}
+  if(t<4.7){c.fillStyle=css("--ink");c.beginPath();c.arc(px,py,6,0,7);c.fill();c.fillStyle=css("--surface");c.font=font(8,1,600);c.textAlign="center";c.fillText("pol",px,py+0.5)}
+  if(t>4.7){c.globalAlpha=clamp((t-4.7)/0.5,0,1);c.strokeStyle=bad;c.lineWidth=2.5;c.beginPath();c.moveTo(x0-4,yMid-4);c.lineTo(x0+N*cw+4,yMid+18);c.stroke();
+    c.font=font(12,0,600);c.fillStyle=bad;c.textAlign="center";c.fillText(L({zh:"左半 = A，右半 = B → 嵌合体，删除",en:"left = A, right = B → chimera, removed"}),w/2,yMid-14);c.globalAlpha=1}
+  if(!REDUCED&&chiRun&&t<6)requestAnimationFrame(drawChi);else chiRun=false;
+}
+function playChi(){chiT0=performance.now();chiRun=true;drawChi()}
+$("#chiPlay").onclick=playChi;
+let chiSeen=false;inView($("#chiCv"),v=>{if(v&&!chiSeen){chiSeen=true;playChi()}});
+onRedraw(()=>{if(!chiRun)drawChi()});
+
+/* ---------------- k-mer bootstrap (simplified RDP) ---------------- */
+const WINS=[{s:534,e:634,t:{zh:"V4 单端 1×101（28174747）",en:"V4 single-end 1×101 (28174747)"},sh:"V4 1×101"},{s:534,e:786,t:{zh:"V4 拼接后 253 nt",en:"V4 merged, 253 nt"},sh:"V4 253"},{s:358,e:784,t:{zh:"V3–V4 拼接后 427 nt",en:"V3–V4 merged, 427 nt"},sh:"V3–V4 427"},{s:986,e:1389,t:{zh:"V6–V8 拼接后 404 nt（29335008）",en:"V6–V8 merged, 404 nt (29335008)"},sh:"V6–V8 404"},{s:1,e:1500,t:{zh:"全长约 1,500 nt（PacBio 等长读长）",en:"full length, about 1,500 nt (PacBio and other long reads)"},sh:{zh:"全长",en:"full"}}];
+const BK={div:6,win:0,refA:null,refsB:[],bars:[],anim:null};
+(function(){const r=mulberry32(5),B="ACGT";BK.refA=Array.from({length:1500},()=>B[Math.floor(r()*4)]).join("")})();
+function inVar(p){return REG.some(([,a,b])=>p+1>=a&&p+1<=b)}
+function makeB(seed){const r=mulberry32(seed),s=BK.refA.split(""),w=s.map((_,i)=>inVar(i)?6:1),tot=w.reduce((a,b)=>a+b,0),pos=new Set();
+  while(pos.size<BK.div){let x=r()*tot,i=0;while(x>w[i]){x-=w[i];i++}pos.add(i)}pos.forEach(p=>{let b;do b="ACGT"[Math.floor(r()*4)];while(b===s[p]);s[p]=b});return s.join("")}
+function kset(s){const S=new Set();for(let i=0;i+8<=s.length;i++)S.add(s.slice(i,i+8));return S}
+function bootWin(win,refB,seed){const read=BK.refA.slice(win.s-1,win.e),words=[];for(let i=0;i+8<=read.length;i++)words.push(read.slice(i,i+8));
+  const SB=kset(refB.slice(Math.max(0,win.s-1-20),win.e+20)),onlyA=words.map(wd=>!SB.has(wd)),m=Math.max(1,Math.floor(words.length/8)),r=mulberry32(seed),draws=[];let wins=0;
+  for(let b=0;b<100;b++){let sa=0,pick=[];for(let i=0;i<m;i++){const j=Math.floor(r()*words.length);pick.push(j);if(onlyA[j])sa++}const win2=sa>0||r()<0.5;if(win2)wins++;draws.push({pick,win:win2,any:sa>0})}
+  return{words,onlyA,wins,draws,m}}
+function bkRecompute(){BK.refsB=[0,1,2,3,4].map(i=>makeB(100+i*7+BK.div));BK.bars=WINS.map((wn,wi)=>{let s=0;for(let i=0;i<5;i++)s+=bootWin(wn,BK.refsB[i],wi*31+i).wins;return s/5});BK.cur=bootWin(WINS[BK.win],BK.refsB[0],99);BK.anim=null}
+function drawBoot(){
+  const {c,w,h}=fit($("#bCv"),118,320),cur=BK.cur,n=cur.words.length,cw=(w-24)/n,ink3=css("--ink-3"),ok=css("--ok"),ink=css("--ink"),acc=css("--accent");
+  const done=BK.anim?Math.min(100,Math.floor((performance.now()-BK.anim)/30)):100,last=done>0?cur.draws[done-1]:null;
+  for(let i=0;i<n;i++){c.fillStyle=cur.onlyA[i]?ok:ink3;c.globalAlpha=cur.onlyA[i]?0.9:0.28;c.fillRect(12+i*cw,14,Math.max(0.8,cw-(cw>2?0.6:0)),26)}c.globalAlpha=1;
+  if(last&&BK.anim){c.fillStyle=ink;for(const j of last.pick)c.fillRect(12+j*cw,42,Math.max(1.2,cw),6)}
+  c.font=font(11,0);c.fillStyle=ink3;c.textAlign="left";c.textBaseline="alphabetic";
+  const nA=cur.onlyA.filter(Boolean).length;c.fillText(L({zh:n+" 个 8-mer，其中 "+nA+" 个只在属 A 里有（绿）；每次 bootstrap 随机抽 "+cur.m+" 个（下方黑点）",en:n+" 8-mers, "+nA+" found only in genus A (green); each bootstrap draws "+cur.m+" (black marks below)"}),12,66);
+  let wins=0;for(let b=0;b<done;b++)if(cur.draws[b].win)wins++;
+  const bw=w-24;c.fillStyle=css("--surface");rr(c,12,80,bw,16,4);c.fill();c.fillStyle=acc;rr(c,12,80,bw*wins/100,16,4);c.fill();
+  c.strokeStyle=css("--bad");c.lineWidth=2;c.beginPath();c.moveTo(12+bw*0.5,76);c.lineTo(12+bw*0.5,100);c.stroke();
+  c.fillStyle=ink;c.font=font(11.5,1,600);c.fillText(L({zh:"投给属 A：",en:"votes for genus A: "})+wins+" / "+done+(done===100?(wins>=50?L({zh:"  → 写上属名",en:"  → genus assigned"}):L({zh:"  → 不到 50，只写到科",en:"  → under 50, family only"})):""),12,112);
+  if(BK.anim&&done<100&&!REDUCED)requestAnimationFrame(drawBoot);else BK.anim=null;
+  // bars by window
+  const B=fit($("#bBars"),46+WINS.length*26,320),c2=B.c,w2=B.w,lab=Math.min(170,w2*0.36),x0=lab+10,bw2=w2-x0-46;
+  c2.font=font(11.5,0);c2.textBaseline="middle";
+  WINS.forEach((wn,i)=>{const y=16+i*26,v=BK.bars[i];c2.fillStyle=i===BK.win?ink:ink3;c2.textAlign="right";c2.fillText(L(wn.sh),lab,y+8);
+    c2.fillStyle=css("--surface");rr(c2,x0,y,bw2,16,4);c2.fill();c2.fillStyle=v>=60?ok:v>=50?css("--warn"):css("--bad");rr(c2,x0,y,Math.max(3,bw2*v/100),16,4);c2.fill();
+    c2.fillStyle=ink;c2.textAlign="left";c2.font=font(11,1,600);c2.fillText(v.toFixed(0),x0+bw2+6,y+8);c2.font=font(11.5,0)});
+  c2.strokeStyle=css("--bad");c2.setLineDash([4,3]);c2.beginPath();c2.moveTo(x0+bw2*0.5,8);c2.lineTo(x0+bw2*0.5,16+WINS.length*26-6);c2.stroke();c2.setLineDash([]);
+  c2.fillStyle=ink3;c2.textAlign="center";c2.font=font(10.5,0);c2.fillText("minBoot 50 · "+L({zh:"平均 bootstrap 支持度（5 组参考的平均）",en:"mean bootstrap support (average of 5 reference pairs)"}),x0+bw2/2,16+WINS.length*26+8);
+  const v=BK.bars;$("#bNarr").textContent=L({zh:"两个属全长差 "+BK.div+" 个碱基，差异集中在可变区。窗口越长，抽到“只有属 A 才有”的 8-mer 的机会越大：1×101 的支持度 "+v[0].toFixed(0)+"，全长 "+v[4].toFixed(0)+"。所以“分到属”的比例本身就随研究测的片段变化，跨研究比较时，这是方案带来的差异，不是生物学差异。",en:"The two genera differ at "+BK.div+" bases over the full gene, mostly in variable regions. The longer the window, the better the chance of drawing an 8-mer that only genus A has: support is "+v[0].toFixed(0)+" for 1×101 and "+v[4].toFixed(0)+" for full length. So the share of reads named to genus depends on which window a study sequenced, a protocol effect rather than biology when comparing studies."});
+}
+function bOptions(){$("#bWin").innerHTML=WINS.map((wn,i)=>'<option value="'+i+'">'+L(wn.t)+"</option>").join("");$("#bWin").value=String(BK.win)}
+$("#bDiv").value=BK.div;$("#bDivo").textContent=BK.div;
+$("#bDiv").addEventListener("input",e=>{BK.div=+e.target.value;$("#bDivo").textContent=BK.div});$("#bDiv").addEventListener("change",()=>{bkRecompute();drawBoot()});
+$("#bWin").onchange=e=>{BK.win=+e.target.value;BK.cur=bootWin(WINS[BK.win],BK.refsB[0],99);BK.anim=null;drawBoot()};
+$("#bRun").onclick=()=>{BK.anim=performance.now();drawBoot()};
+onRedraw(()=>{bOptions();if(!BK.cur)bkRecompute();drawBoot()});
+
+/* ---------------- protocol bias ---------------- */
+const GEN=["Bacteroides","Faecalibacterium","Roseburia","Bifidobacterium","Escherichia","Prevotella","other"];
+const HEALTHY=[0.30,0.14,0.08,0.08,0.02,0.12,0.26],IBD=[0.34,0.06,0.03,0.05,0.10,0.10,0.32];
+const PROT=[{n:{zh:"真实组成",en:"true composition"},e:[1,1,1,1,1,1,1]},{n:"V4",e:[1.0,0.8,1.2,0.4,1.5,1.0,1.0]},{n:"V3–V4",e:[1.3,1.0,0.7,1.2,1.0,0.6,1.0]},{n:"V6–V8",e:[0.7,1.6,1.0,0.8,0.8,1.4,1.0]}];
+const GCOL=["#3b7dd8","#2e9e6a","#8a63d2","#d98a1e","#d24b4b","#1f9fb0","#8b948f"];
+let bScale="rel",bGenus=1,bCtl=false;
+const obs=(t,e)=>{const v=t.map((x,i)=>x*e[i]),s=v.reduce((a,b)=>a+b,0);return v.map(x=>x/s)};
+const clr=v=>{const lg=v.map(Math.log),m=lg.reduce((a,b)=>a+b,0)/lg.length;return lg.map(x=>x-m)};
+function drawBias(){
+  const A=fit($("#biasBars"),232,300),c=A.c,w=A.w,ink=css("--ink"),ink3=css("--ink-3"),lab=86,bw=w-lab-12;
+  c.font=font(11.5,0);c.textBaseline="middle";
+  c.fillStyle=ink3;c.textAlign="left";c.fillText(L({zh:"同一个健康样本，四种看法",en:"One healthy sample, four views"}),lab,10);
+  PROT.forEach((p,i)=>{const y=24+i*32,v=obs(HEALTHY,p.e);let x=lab;c.fillStyle=ink;c.textAlign="right";c.fillText(L(p.n),lab-8,y+11);
+    v.forEach((f,j)=>{c.fillStyle=GCOL[j];c.globalAlpha=j===bGenus?1:0.55;c.fillRect(x,y,bw*f,22);c.globalAlpha=1;if(j===bGenus&&bw*f>30){c.fillStyle="#fff";c.textAlign="center";c.font=font(10.5,1,600);c.fillText((f*100).toFixed(0)+"%",x+bw*f/2,y+11.5);c.font=font(11.5,0)}x+=bw*f})});
+  let lx=lab,ly=24+PROT.length*32+6;c.font=font(10.5,0);c.textAlign="left";
+  GEN.forEach((g,j)=>{const tw=c.measureText(g).width+22;if(lx+tw>w-6){lx=lab;ly+=16}c.fillStyle=GCOL[j];c.fillRect(lx,ly-5,10,10);c.fillStyle=j===bGenus?ink:ink3;c.fillText(g,lx+14,ly);lx+=tw});
+  const B=fit($("#biasSlope"),232,280),c2=B.c,w2=B.w,xl=64,xr=w2-90;
+  const vals=PROT.map(p=>{const hv=obs(HEALTHY,p.e),iv=obs(IBD,p.e);return bScale==="rel"?[hv[bGenus]*100,iv[bGenus]*100]:[clr(hv)[bGenus],clr(iv)[bGenus]]});
+  const all=vals.flat(),mn=Math.min(...all),mx=Math.max(...all),pad=(mx-mn)*0.15||1,Y=v=>22+(232-56)*(1-(v-mn+pad)/(mx-mn+2*pad));
+  c2.font=font(11.5,0);c2.fillStyle=ink3;c2.textAlign="center";c2.textBaseline="middle";c2.fillText(L({zh:"健康",en:"healthy"}),xl,232-14);c2.fillText("IBD",xr,232-14);
+  c2.textAlign="left";c2.fillText(GEN[bGenus]+" · "+(bScale==="rel"?L({zh:"相对丰度 %",en:"relative abundance %"}):"CLR"),8,10);
+  vals.forEach(([a,b],i)=>{c2.strokeStyle=i===0?ink:[css("--b1"),css("--ok"),css("--b2")][i-1];c2.lineWidth=i===0?3:2;c2.setLineDash(i===0?[]:[]);c2.beginPath();c2.moveTo(xl,Y(a));c2.lineTo(xr,Y(b));c2.stroke();
+    c2.fillStyle=c2.strokeStyle;c2.beginPath();c2.arc(xl,Y(a),3.5,0,7);c2.arc(xr,Y(b),3.5,0,7);c2.fill();
+    c2.font=font(10.5,1,500);c2.textAlign="left";c2.fillText(L(PROT[i].n).replace("真实组成","真实").replace("true composition","true")+" Δ"+(b-a>=0?"+":"")+(b-a).toFixed(bScale==="rel"?1:2),xr+8,Y(b))});
+  // two studies
+  const C=fit($("#biasDots"),190,320),c3=C.c,w3=C.w,r=mulberry32(77);
+  const mk=(n,mu,sd)=>Array.from({length:n},()=>mu+sd*gauss(r));
+  const s1c=mk(20,-1,0.55),s1i=mk(20,0.9,0.65),s2c=mk(20,0.1+(bCtl?1.7:0),0.55),s2i=mk(20,2.0,0.65);
+  const thr=(median(s1c)+median(s1i))/2,lo=-3,hi=5,X=v=>60+(w3-80)*(v-lo)/(hi-lo);
+  const rows=[[L({zh:"研究 1",en:"Study 1"}),s1c,s1i,52],[L({zh:"研究 2",en:"Study 2"}),s2c,s2i,132]];
+  c3.font=font(11.5,0);c3.textBaseline="middle";
+  rows.forEach(([nm,cc,ii,y])=>{c3.fillStyle=ink;c3.textAlign="left";c3.fillText(nm,6,y);
+    cc.forEach((v,j)=>{c3.strokeStyle=css("--b1");c3.lineWidth=1.6;c3.strokeRect(X(v)-3.5,y-16+(j%4)*5-3.5,7,7)});
+    ii.forEach((v,j)=>{c3.fillStyle=css("--b2");c3.beginPath();c3.arc(X(v),y+8+(j%4)*5,3.8,0,7);c3.fill()})});
+  c3.strokeStyle=css("--bad");c3.lineWidth=2;c3.setLineDash([5,4]);c3.beginPath();c3.moveTo(X(thr),18);c3.lineTo(X(thr),172);c3.stroke();c3.setLineDash([]);
+  c3.fillStyle=css("--bad");c3.textAlign="left";c3.font=font(10.5,0);c3.fillText(L({zh:"研究 1 定的阈值",en:"threshold from study 1"}),X(thr)+5,14);
+  c3.fillStyle=ink3;c3.textAlign="center";c3.fillText(L({zh:"失调分数 →（示意）",en:"dysbiosis score → (illustrative)"}),(w3+40)/2,184);
+  c3.textAlign="left";c3.fillText("□ "+L({zh:"对照",en:"control"})+"   ● IBD",w3-130,184);
+  const a1=auroc(s1c,s1i),a2=auroc(s2c,s2i),acc2=(s2c.filter(v=>v<thr).length+s2i.filter(v=>v>=thr).length)/40,fp=s2c.filter(v=>v>=thr).length;
+  $("#biasStats").innerHTML='<div class="stat"><b>'+a1.toFixed(2)+"</b><span>"+L({zh:"研究 1 内部 AUROC",en:"AUROC inside study 1"})+'</span></div><div class="stat"><b class="'+(a2<0.7?"bad":"good")+'">'+a2.toFixed(2)+"</b><span>"+L({zh:"研究 2 内部 AUROC",en:"AUROC inside study 2"})+'</span></div><div class="stat"><b class="'+(acc2<0.75?"bad":"")+'">'+pct(acc2)+"</b><span>"+L({zh:"用研究 1 的阈值判研究 2 的准确率",en:"accuracy on study 2 with study 1's threshold"})+'</span></div><div class="stat"><b class="'+(fp>5?"bad":"")+'">'+fp+" / 20</b><span>"+L({zh:"研究 2 的对照被判成 IBD",en:"study 2 controls called IBD"})+"</span></div>";
+}
+$$("[data-bscale]").forEach(b=>b.onclick=()=>{bScale=b.dataset.bscale;pressGroup("[data-bscale]","data-bscale",bScale);drawBias()});
+$("#biasGenus").innerHTML=GEN.slice(0,6).map((g,i)=>'<option value="'+i+'">'+g+"</option>").join("");$("#biasGenus").value="1";
+$("#biasGenus").onchange=e=>{bGenus=+e.target.value;drawBias()};
+$("#biasCtl").onclick=()=>{bCtl=!bCtl;$("#biasCtl").setAttribute("aria-pressed",String(bCtl));drawBias()};
+onRedraw(drawBias);
+
+/* ---------------- strategies ---------------- */
+const PICT=[
+ '<svg viewBox="0 0 240 64"><rect x="8" y="20" width="52" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><rect x="94" y="20" width="52" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><rect x="180" y="20" width="52" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><path d="M62 32h28M148 32h28" style="stroke:var(--ink-3);stroke-width:2"/><circle cx="120" cy="10" r="7" style="fill:none;stroke:var(--warn);stroke-width:2"/><path d="M125 15l8 8" style="stroke:var(--warn);stroke-width:3"/></svg>',
+ '<svg viewBox="0 0 240 64"><g style="fill:var(--b1)"><rect x="10" y="8" width="180" height="7" rx="2"/><rect x="10" y="20" width="140" height="7" rx="2"/><rect x="10" y="32" width="210" height="7" rx="2"/><rect x="10" y="44" width="165" height="7" rx="2"/></g><path d="M130 2v60" style="stroke:var(--bad);stroke-width:2;stroke-dasharray:4 3"/><rect x="131" y="2" width="100" height="58" style="fill:var(--surface);opacity:.7"/></svg>',
+ '<svg viewBox="0 0 240 64"><circle cx="120" cy="10" r="6" style="fill:var(--accent)"/><path d="M120 16L70 34M120 16l50 18M70 40L45 56M70 40l25 16M170 40l-20 16M170 40l25 16" style="stroke:var(--ink-3);stroke-width:2"/><circle cx="70" cy="37" r="5" style="fill:var(--accent)"/><circle cx="170" cy="37" r="5" style="fill:var(--accent)"/><g style="fill:var(--ink-3)"><circle cx="45" cy="58" r="3"/><circle cx="95" cy="58" r="3"/><circle cx="150" cy="58" r="3"/><circle cx="195" cy="58" r="3"/></g></svg>',
+ '<svg viewBox="0 0 240 64"><path d="M20 32h40M60 32V14h50M60 32v18h50M110 14V6h60M110 14v8h60M110 50v-8h60M110 50v8h60" style="fill:none;stroke:var(--ink-3);stroke-width:2"/><path d="M140 22v-0h40" style="stroke:var(--b2);stroke-width:3"/><circle cx="184" cy="22" r="4" style="fill:var(--b2)"/><path d="M150 42h45" style="stroke:var(--b1);stroke-width:3"/><circle cx="199" cy="42" r="4" style="fill:var(--b1)"/></svg>',
+ '<svg viewBox="0 0 240 64"><path d="M10 56C40 56 50 12 75 12S110 56 140 56" style="fill:none;stroke:var(--b1);stroke-width:2.5"/><path d="M80 56c30 0 40-44 65-44s35 44 65 44" style="fill:none;stroke:var(--b2);stroke-width:2.5"/><path d="M80 34h55" style="stroke:var(--ink-3);stroke-width:2"/><path d="M128 28l9 6-9 6" style="fill:none;stroke:var(--ink-3);stroke-width:2"/></svg>'];
+const STRAT=[
+ {t:{zh:"一条固定流程，每个研究手动调参",en:"One pinned pipeline, parameters tuned per study"},ex:{zh:"nf-core/ampliseq、QIIME 2 流程；MicrobiomeHD 这类人工整理的数据库",en:"nf-core/ampliseq, QIIME 2 workflows; hand-curated collections such as MicrobiomeHD"},
+  fix:{zh:"可重复：容器、固定版本、同样的步骤。",en:"Reproducibility: containers, pinned versions, the same steps."},cost:{zh:"每个研究都要有人看质量图定 truncLen。自动截断按多数 reads 选。",en:"Someone has to read quality plots and pick truncLen for every study. Automatic truncation follows the majority of reads."},
+  miss:{zh:"E23：少数批次被截掉 98%；35756051 至今在 review。",en:"E23: a minority batch lost 98 %; 35756051 is still in review."}},
+ {t:{zh:"全部截成同一个长度",en:"Trim everything to one length"},ex:{zh:"Deblur（要求等长）；Qiita 常把 reads 截到 100 或 150 nt 再合并研究",en:"Deblur (needs equal lengths); Qiita often trims reads to 100 or 150 nt before combining studies"},
+  fix:{zh:"同一个区域、同一种引物时，ASV 可以直接对上。",en:"Within one region and primer pair, ASVs match exactly."},cost:{zh:"扔掉长度和分辨率；不同区域之间仍然没有共同的序列。",en:"Throws away length and resolution; different regions still share no sequence."},
+  miss:{zh:"我们 8 个研究覆盖 4 个不同的窗口，连两个 V3–V4 研究都差 2 个碱基。",en:"Our eight studies cover four windows; even two V3–V4 studies end 2 bases apart."}},
+ {t:{zh:"用分类学当共同货币",en:"Taxonomy as the common currency"},ex:{zh:"把 ASV 合并到属，跨研究比较属的丰度",en:"Sum ASVs to genus and compare genera across studies"},
+  fix:{zh:"不同区域、不同平台可以放在一起比。",en:"Different regions and platforms can be compared."},cost:{zh:"丢掉分辨率；能不能分到属取决于测的窗口（分类一节）。",en:"Loses resolution; whether a read reaches genus depends on the window (taxonomy section)."},
+  miss:{zh:"我们的模型就这样做：5 个研究共有 130 个属，跨研究 AUROC 比研究内低约 0.14。",en:"Our model does this: 130 genera shared by five studies; AUROC across studies is about 0.14 below within-study."}},
+ {t:{zh:"放进同一棵参考树",en:"Placement into one reference tree"},ex:{zh:"q2-fragment-insertion（SEPP）、Greengenes2",en:"q2-fragment-insertion (SEPP), Greengenes2"},
+  fix:{zh:"不同区域的序列落在同一棵进化树上，可以按亲缘关系比较。",en:"Sequences from different regions land on one phylogeny and can be compared by relatedness."},cost:{zh:"依赖参考树的覆盖；计算量大；方案带来的丰度偏差还在。",en:"Depends on the tree's coverage; heavy to compute; the protocol's abundance bias remains."},
+  miss:{zh:"对 Q01–Q05 这类数据本身的问题无能为力：坏数据放到树上还是坏数据。",en:"Does nothing for data problems like Q01–Q05: bad reads placed on a tree are still bad reads."}},
+ {t:{zh:"统计校正和 meta 分析",en:"Statistical correction and meta-analysis"},ex:{zh:"ComBat、MMUPHin、percentile normalization；按研究分层再合并",en:"ComBat, MMUPHin, percentile normalization; analyze per study, then combine"},
+  fix:{zh:"每个研究整体的偏移（跨研究一节里的平移）。",en:"Per-study offsets (the shifts in the cross-study section)."},cost:{zh:"需要每个研究都有对照；偏移和标签重合时无能为力。",en:"Needs controls in every study; helpless when the offset lines up with the label."},
+  miss:{zh:"42349924：对照另测，留出时 AUROC 0.49；37696680：只有病例。",en:"42349924: controls sequenced elsewhere, AUROC 0.49 held out; 37696680: patients only."}}];
+function drawStrat(){$("#stratGrid").innerHTML=STRAT.map((s,i)=>"<article>"+PICT[i]+"<h3>"+L(s.t)+'</h3><p class="muted" style="margin:0">'+L(s.ex)+"</p><dl><dt>"+L({zh:"修好了",en:"Fixes"})+"</dt><dd>"+L(s.fix)+"</dd><dt>"+L({zh:"代价",en:"Costs"})+"</dt><dd>"+L(s.cost)+"</dd><dt>"+L({zh:"在我们的数据上",en:"On our data"})+"</dt><dd>"+L(s.miss)+"</dd></dl></article>").join("")}
+onRedraw(drawStrat);
+
+/* ---------------- our eight studies ---------------- */
+const WALL=[
+ {id:"23013615",v:"review",meta:{zh:"Morgan 2012 · 粪便 + 活检 · V3–V5 · 454 · 256 runs",en:"Morgan 2012 · stool + biopsy · V3–V5 · 454 · 256 runs"},
+  b:[{zh:"ENA 的质量分数被替换，改从 NCBI 取",en:"ENA's quality scores replaced; reads from NCBI"},{zh:"87% 的 reads 反向",en:"87 % of reads reversed"},{zh:"不截断时一个细菌拆成很多长度的 ASV，改成固定 280 nt",en:"without a fixed cut, one organism split by length; fixed at 280 nt"},{zh:"addSpecies 两次超出 16 GB",en:"addSpecies ran out of 16 GB twice"}],ids:"Q01 Q07 Q08 · E3 E4 E5"},
+ {id:"28174747",v:"review",meta:{zh:"儿童 IBD + 家人 · 粪便 · V4 · HiSeq 1×101 · 90 runs",en:"pediatric IBD + relatives · stool · V4 · HiSeq 1×101 · 90 runs"},
+  b:[{zh:"引物已被切掉，跳过 cutadapt",en:"primers already removed; cutadapt skipped"},{zh:"去噪一个任务 76 分钟",en:"denoising took 76 min in one task"},{zh:"QC 长度检查把 101 nt 的 ASV 当成错的",en:"the QC length check flagged 101-nt ASVs as wrong"}],ids:"Q09 · E13 E15"},
+ {id:"29335008",v:"pass",meta:{zh:"儿童克罗恩病 · 活检 · V6–V8 · MiSeq 2×301 · 38 runs",en:"pediatric Crohn's · biopsy · V6–V8 · MiSeq 2×301 · 38 runs"},
+  b:[{zh:"同一个项目里还有 75 个 shotgun run",en:"75 shotgun runs in the same project"},{zh:"流程顺利，但留出时 AUROC 只有 0.56：唯一的 V6–V8、唯一全活检",en:"ran cleanly, yet AUROC 0.56 when held out: the only V6–V8 and all-biopsy study"}],ids:"Q16"},
+ {id:"35756051",v:"review",meta:{zh:"UC ± 艰难梭菌 · 粪便 · V3–V4 · MiSeq 2×301 · 89 runs",en:"UC ± C. difficile · stool · V3–V4 · MiSeq 2×301 · 89 runs"},
+  b:[{zh:"ENA 给的 FASTQ 是一个 HTML 网页",en:"ENA served an HTML page as FASTQ"},{zh:"自动截断只剩 17 nt 重叠，改成 281/178",en:"automatic truncation left 17 nt of overlap; 281/178"},{zh:"中位保留率 38%，42/89 个 run 不到 20%（未解决）",en:"median retention 38 %, 42 of 89 runs under 20 % (open)"}],ids:"Q02 Q06 · E10"},
+ {id:"37661264",v:"pass",meta:{zh:"克罗恩病 · 粪便 + 黏膜 · V3–V4 · MiSeq 2×250 · 97 runs",en:"Crohn's · stool + mucosa · V3–V4 · MiSeq 2×250 · 97 runs"},
+  b:[{zh:"论文没给引物，从 reads 里认出 341F/806R",en:"no primers in the paper; 341F/806R found in the reads"},{zh:"pooled 去噪每个方向 1 小时 45 分",en:"pooled denoising took 1 h 45 min per direction"},{zh:"addSpecies 每块 15–17 GB，约 5 小时",en:"addSpecies needed 15–17 GB per chunk, about 5 h"}],ids:"Q12 Q14 · E11 E12 E14"},
+ {id:"36111238",v:"review",meta:{zh:"UC 活动/缓解 + 健康 · 粪便 · V3–V4 · MiSeq 2×301 + 2×300 · 60 runs",en:"UC active/remission + healthy · stool · V3–V4 · MiSeq 2×301 + 2×300 · 60 runs"},
+  b:[{zh:"写着单端，给的是双端",en:"declared single-end, served as pairs"},{zh:"引物前 8 nt spacer；论文的引物少印一个碱基",en:"8-nt spacer; the paper's primer printed one base short"},{zh:"短 1 bp 的批次丢了 98%，封顶后 65.2%",en:"the batch 1 bp shorter lost 98 %; 65.2 % after the cap"}],ids:"Q04 Q05 Q11 Q13 · E22 E23"},
+ {id:"37696680",v:"review",meta:{zh:"儿童 UC / PSC-UC · 粪便 · V3–V4 · MiSeq · 53 runs",en:"pediatric UC / PSC-UC · stool · V3–V4 · MiSeq · 53 runs"},
+  b:[{zh:"ENA 的 FASTQ 来自 SRA Lite，质量分数丢了",en:"ENA's FASTQ came from SRA Lite, scores lost"},{zh:"ENA 返回空内容；项目里混着 ITS2",en:"ENA returned empty content; ITS2 runs in the project"},{zh:"对照在另一个生物样本库项目里，只保留病例",en:"controls sit in a biobank project; patients only"}],ids:"Q01 Q03 Q16 Q19 · E22"},
+ {id:"42349924",v:"review",meta:{zh:"韩国儿童克罗恩病 · 粪便 · V3–V4 · MiSeq 2×301 · 69 runs",en:"Korean pediatric Crohn's · stool · V3–V4 · MiSeq 2×301 · 69 runs"},
+  b:[{zh:"同一研究里有 MiSeq 也有 PacBio",en:"MiSeq and PacBio in one study"},{zh:"论文里的 7 个对照在数据库里找不到",en:"7 controls from the paper missing in the archive"},{zh:"所有对照在同一个 run、另一家医院：留出时 AUROC 0.49",en:"all controls in one run from another hospital: AUROC 0.49 held out"}],ids:"Q17 Q20 Q21"}];
+function drawWall(){$("#wall").innerHTML=WALL.map(s=>'<article class="study"><h3><span>'+s.id+'</span><span class="pill '+s.v+'">'+s.v+'</span></h3><div class="meta">'+L(s.meta)+"</div><ul>"+s.b.map(x=>"<li>"+L(x)+"</li>").join("")+'</ul><div class="ids">'+s.ids+"</div></article>").join("")}
+onRedraw(drawWall);
+
+/* ---------------- catalog strip ---------------- */
+const QT={Q01:{zh:"质量分数丢失（SRA Lite）",en:"quality scores lost (SRA Lite)"},Q02:{zh:"链接给的是 HTML",en:"link serves an HTML page"},Q03:{zh:"返回空内容",en:"empty content"},Q04:{zh:"写着单端，给的是双端",en:"declared single, served paired"},
+ Q05:{zh:"一个批次短 1 bp",en:"one batch 1 bp shorter"},Q06:{zh:"截断后重叠不够",en:"too little overlap after truncation"},Q07:{zh:"454 变长 reads",en:"454 reads of variable length"},Q08:{zh:"reads 反向",en:"reads in reverse"},Q09:{zh:"引物已被切掉",en:"primers already removed"},Q10:{zh:"只有部分 reads 有引物",en:"primers in only some reads"},
+ Q11:{zh:"引物前有 spacer",en:"spacer before the primer"},Q12:{zh:"引物 5′ 端被截",en:"primer 5′ end clipped"},Q13:{zh:"论文的引物少印一个碱基",en:"primer printed one base short"},Q14:{zh:"论文没给引物",en:"paper gives no primers"},Q15:{zh:"质量分数分箱",en:"binned quality scores"},
+ Q16:{zh:"项目里有非 16S 数据",en:"non-16S runs in the project"},Q17:{zh:"一个研究多个平台",en:"several platforms in one study"},Q18:{zh:"标签藏在奇怪的地方",en:"labels in unusual places"},Q19:{zh:"对照来自另一个 BioProject",en:"controls from another BioProject"},Q20:{zh:"论文的样本在数据库里缺失",en:"samples missing from the archive"},
+ Q21:{zh:"测序批次和病例/对照重合",en:"batch lines up with case/control"},Q22:{zh:"元数据是占位或编造的",en:"placeholder or invented metadata"},Q23:{zh:"筛选模型自相矛盾",en:"screening model contradicts itself"}};
+const LAYERS=[{n:{zh:"数据库",en:"archive"},q:["Q01","Q02","Q03","Q04"],col:"--b1"},{n:{zh:"引物与 reads 结构",en:"primers & read structure"},q:["Q08","Q09","Q10","Q11","Q12","Q13","Q14"],col:"--accent"},{n:{zh:"DADA2 的长度与质量要求",en:"DADA2 length & quality"},q:["Q05","Q06","Q07","Q15"],col:"--bad"},{n:{zh:"策展与研究设计",en:"curation & study design"},q:["Q16","Q17","Q18","Q19","Q20","Q21","Q22"],col:"--warn"},{n:{zh:"文献筛选",en:"screening"},q:["Q23"],col:"--ink-3"}];
+let catSel=2;
+function drawCat(){
+  $("#catBar").innerHTML=LAYERS.map((l,i)=>'<button type="button" data-i="'+i+'" aria-pressed="'+(i===catSel)+'" style="flex:'+l.q.length+';background:var('+l.col+')" title="'+L(l.n)+'">'+l.q.length+"</button>").join("");
+  $$("#catBar button").forEach(b=>b.onclick=()=>{catSel=+b.dataset.i;drawCat()});
+  const l=LAYERS[catSel];$("#catList").innerHTML='<li style="grid-column:1/-1;font-weight:600">'+L(l.n)+" · "+l.q.length+"</li>"+l.q.map(q=>'<li><b style="color:var('+l.col+')">'+q+"</b>"+L(QT[q])+"</li>").join("");
+}
+onRedraw(drawCat);
+
+/* ---------------- boot ---------------- */
+setLang(lang());
+requestAnimationFrame(heroLoop);
+let rzT=0;window.addEventListener("resize",()=>{clearTimeout(rzT);rzT=setTimeout(redrawAll,120)});
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",redrawAll);
+new MutationObserver(redrawAll).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+</script>
+<script>
+"use strict";
+/* ---------------- mini BLAST (SMDI route) ---------------- */
+const BL={src:0,win:0,err:0,thr:98,t0:0,run:false};
+(function(){const r=mulberry32(808),N="ACGT",rnd=n=>Array.from({length:n},()=>N[Math.floor(r()*4)]).join("");
+  const mut=(s,ps)=>{const a=s.split("");ps.forEach(p=>{let b;do b=N[Math.floor(r()*4)];while(b===a[p]);a[p]=b});return a.join("")};
+  const spread=(n,lo,hi)=>{const s=new Set();while(s.size<n)s.add(lo+Math.floor(r()*(hi-lo)));return[...s]};
+  const Td=rnd(200),Pg=rnd(200),An=rnd(200),Ff=rnd(200),Tm=mut(Td,spread(7,0,200)),Pc=mut(Pg,spread(6,128,200)),Nov=mut(Td,spread(11,0,200));
+  BL.refs=[{db:1,n:"Treponema denticola",s:Td},{db:1,n:"Treponema maltophilum",s:Tm},{db:1,n:"Porphyromonas gingivalis",s:Pg},{db:1,n:"Porphyromonas catoniae",s:Pc},{db:1,n:"Fretibacterium fastidiosum",s:Ff},{db:1,n:"Actinomyces naeslundii",s:An},{db:2,n:"uncultured Synergistetes clone",s:Ff}];
+  BL.srcs=[{n:"Treponema denticola",s:Td},{n:"Porphyromonas gingivalis",s:Pg},{n:"Fretibacterium fastidiosum",s:Ff},{n:{zh:"参考库里没有的新物种",en:"a species missing from the references"},s:Nov}];
+  BL.errPos=spread(6,4,116);
+})();
+function blRead(){const s=BL.srcs[BL.src].s,st=BL.win?80:0,a=s.slice(st,st+120).split("");for(let i=0;i<BL.err;i++){const p=BL.errPos[i];a[p]="ACGT"[("ACGT".indexOf(a[p])+1+i%3)%4]}return{seq:a.join(""),start:st}}
+function blAlign(read,ref){let best=null;for(let o=0;o+read.length<=ref.length;o++){let m=0;const mm=[];for(let i=0;i<read.length;i++){if(read[i]===ref[o+i])m++;else mm.push(i)}if(!best||m>best.m)best={o,m,mm}}
+  best.id=best.m/read.length*100;best.score=2*best.m-3*(read.length-best.m);return best}
+function blDecide(hits){const ok=hits.filter(h=>h.id>=BL.thr-1e-9);if(!ok.length)return{none:true};const db=Math.min(...ok.map(h=>h.db)),inDb=ok.filter(h=>h.db===db),top=Math.max(...inDb.map(h=>h.score)),win=inDb.filter(h=>h.score===top);return{db,win,other:ok.filter(h=>h.db!==db)}}
+function drawBlast(){
+  const read=blRead(),hits=BL.refs.map(rf=>Object.assign({db:rf.db,n:rf.n},blAlign(read.seq,rf.s))),dec=blDecide(hits);
+  const rows=hits.length,{c,w,h}=fit($("#blCv"),40+rows*34+20,340),ink=css("--ink"),ink3=css("--ink-3"),line=css("--line"),ok=css("--ok"),bad=css("--bad"),acc=css("--accent");
+  const lab=Math.min(230,w*0.4),x0=lab+12,x1=w-70,S=(x1-x0)/200,t=REDUCED||!BL.run?99:(performance.now()-BL.t0)/1000,sweep=x0+(x1-x0)*clamp(t/0.9,0,1);
+  c.font=font(11,0);c.fillStyle=ink3;c.textAlign="left";c.textBaseline="middle";
+  c.fillText(L({zh:"read：",en:"read: "})+L(BL.srcs[BL.src].n)+" · "+(read.start+1)+"–"+(read.start+120)+" · "+BL.err+L({zh:" 个错误",en:" errors"}),x0,14);
+  c.textAlign="right";c.fillText("identity",w-8,14);
+  const chosen=new Set(dec.none?[]:dec.win.map(h=>h.n+"|"+h.db));
+  hits.forEach((hh,i)=>{const y=40+i*34,show=x0+hh.o*S<sweep||t>=0.9,isWin=chosen.has(hh.n+"|"+hh.db),pass=hh.id>=BL.thr-1e-9;
+    if(isWin){c.fillStyle=css("--accent-soft");rr(c,2,y-14,w-4,30,6);c.fill()}
+    c.textAlign="right";c.font=font(10,1,600);c.fillStyle=hh.db===1?acc:ink3;c.fillText(hh.db===1?"HOMD":L({zh:"其他库",en:"other db"}),lab,y-5);
+    c.font="italic "+font(11.5,0);c.fillStyle=ink;c.fillText(hh.n,lab,y+8);
+    c.fillStyle=line;c.fillRect(x0,y,(x1-x0),4);
+    if(show){const xa=x0+hh.o*S,xb=xa+120*S;c.fillStyle=pass?ok:ink3;c.globalAlpha=pass?0.85:0.45;c.fillRect(xa,y-5,xb-xa,14);c.globalAlpha=1;
+      c.fillStyle=bad;for(const p of hh.mm)c.fillRect(xa+p*S,y-7,Math.max(1.2,S*0.8),18);
+      c.textAlign="right";c.font=font(12,1,600);c.fillStyle=pass?ok:ink3;c.fillText(hh.id.toFixed(1)+"%",w-8,y+2)}
+  });
+  if(t<0.9){c.strokeStyle=acc;c.lineWidth=2;c.beginPath();c.moveTo(sweep,26);c.lineTo(sweep,40+rows*34-8);c.stroke();requestAnimationFrame(drawBlast);return}
+  BL.run=false;
+  c.textAlign="left";c.font=font(10.5,0);c.fillStyle=ink3;c.fillText(L({zh:"灰条 = 参考序列（200 nt），色块 = read 的最佳比对位置，红线 = 错配；分数 = 2×匹配 − 3×错配",en:"grey bar = reference (200 nt), block = where the read aligns best, red = mismatch; score = 2×matches − 3×mismatches"}),8,40+rows*34+6);
+  const best=[...hits].sort((a,b)=>b.score-a.score)[0];let n;
+  if(dec.none){
+    n=BL.src===3?{zh:"最接近的是 "+best.n+"（"+best.id.toFixed(1)+"%），没有任何参考序列达到 "+BL.thr+"%。这条 read 会和其他没匹配的 reads 一起用 USEARCH 聚成 OTU；一个 OTU 有 ≥ 100 条 reads 才保留，算作可能的新物种。",en:"The closest is "+best.n+" ("+best.id.toFixed(1)+" %); no reference reaches "+BL.thr+" %. The read joins the other unmatched reads in USEARCH de novo OTUs; an OTU with ≥ 100 reads is kept as a possible new species."}
+      :{zh:"这条 read 其实来自 "+L(BL.srcs[BL.src].n)+"，但 "+BL.err+" 个测序错误让 identity 掉到 "+best.id.toFixed(1)+"%，低于 "+BL.thr+"%，找不到匹配，会被当成“新物种”去聚类。98% 也是一个悬崖：这就是论文把质量过滤定得这么严（50 nt 滑窗平均 Q35）的原因。",en:"This read really comes from "+L(BL.srcs[BL.src].n)+", but "+BL.err+" sequencing errors drop its identity to "+best.id.toFixed(1)+" %, below "+BL.thr+" %, so it finds no match and is treated as a possible new species. 98 % is a cliff too, which is why the paper filters so hard (50-nt window, mean Q35)."};
+  }else if(dec.win.length>1){
+    n={zh:dec.win.map(h=>h.n).join(" 和 ")+" 在这一段完全一样（"+dec.win[0].id.toFixed(1)+"%，分数相同），打平 → 多物种标签“"+dec.win.map(h=>h.n.split(" ")[1]).join(" / ")+"”。换到“后 120 nt”试试：差异在基因的另一段。片段越短、越保守，打平越多。",en:dec.win.map(h=>h.n).join(" and ")+" are identical over this stretch ("+dec.win[0].id.toFixed(1)+" %, same score): a tie → multi-species label \""+dec.win.map(h=>h.n.split(" ")[1]).join(" / ")+"\". Try \"last 120 nt\": the differences sit in the other part of the gene. The shorter and more conserved the window, the more ties."};
+  }else if(dec.other.length){
+    n={zh:"两个库里都有 "+dec.win[0].id.toFixed(1)+"% 的匹配：HOMD 优先，所以记为 "+dec.win[0].n+"，而不是另一个库里的 “"+dec.other[0].n+"”。论文讨论里提到，原来的几个研究要么没认出 Fretibacterium，要么叫它 Synergistetes：参考库和命名的更新本身就会改变结果。",en:"Both databases match at "+dec.win[0].id.toFixed(1)+" %. HOMD comes first, so the read is recorded as "+dec.win[0].n+", not as \""+dec.other[0].n+"\" from the other database. The paper notes that the original studies either missed Fretibacterium or called it Synergistetes: updating references and names changes results by itself."};
+  }else{
+    const second=[...hits].filter(h=>h!==dec.win[0]).sort((a,b)=>b.id-a.id)[0];
+    n={zh:"→ "+dec.win[0].n+"（"+dec.win[0].id.toFixed(1)+"%）。最近的亲戚 "+second.n+" 只有 "+second.id.toFixed(1)+"%。"+(BL.err?"有 "+BL.err+" 个测序错误，但还在 "+BL.thr+"% 以内：在阈值以内的错误不影响结果，超过就整条失去名字。":"再加几个测序错误试试。"),en:"→ "+dec.win[0].n+" ("+dec.win[0].id.toFixed(1)+" %). The closest relative, "+second.n+", reaches only "+second.id.toFixed(1)+" %. "+(BL.err?BL.err+" sequencing error(s), still within "+BL.thr+" %: errors inside the cutoff change nothing, one more and the read loses its name.":"Try adding a few sequencing errors.")};
+  }
+  $("#blNarr").textContent=L(n);
+}
+function blReplay(){BL.t0=performance.now();BL.run=true;drawBlast()}
+function blOptions(){$("#blSrc").innerHTML=BL.srcs.map((s,i)=>'<option value="'+i+'">'+L(s.n)+"</option>").join("");$("#blSrc").value=String(BL.src)}
+$("#blSrc").onchange=e=>{BL.src=+e.target.value;blReplay()};
+$$("[data-blwin]").forEach(b=>b.onclick=()=>{BL.win=+b.dataset.blwin;pressGroup("[data-blwin]","data-blwin",String(BL.win));blReplay()});
+$("#blErr").value=BL.err;$("#blErro").textContent=BL.err;$("#blErr").addEventListener("input",e=>{BL.err=+e.target.value;$("#blErro").textContent=BL.err;BL.run=false;drawBlast()});
+$("#blThr").value=BL.thr;$("#blThro").textContent=BL.thr+"%";$("#blThr").addEventListener("input",e=>{BL.thr=+e.target.value;$("#blThro").textContent=BL.thr+"%";BL.run=false;drawBlast()});
+$("#blRun").onclick=blReplay;
+
+/* SMDI for two illustrative samples */
+const SM_SP=[["T. denticola",1],["M. timidum",1],["F. fastidiosum",1],["T. forsythia",1],["A. naeslundii",0],["S. sanguinis",0]];
+const SM_S=[{n:{zh:"健康位点（示意）",en:"healthy site (illustrative)"},v:[-1.5,-2.0,-1.8,-1.2,2.4,2.8]},{n:{zh:"牙周炎位点（示意）",en:"periodontitis site (illustrative)"},v:[2.2,1.6,2.0,1.8,0.2,-0.4]}];
+function drawSmdi(){
+  const {c,w,h}=fit($("#smdiCv"),236,320),ink=css("--ink"),ink3=css("--ink-3"),line=css("--line"),bad=css("--bad"),ok=css("--ok");
+  const half=w/2,Y=v=>118-v*24;
+  SM_S.forEach((s,k)=>{const xo=k*half,bw=Math.min(34,(half-40)/6-6),dys=s.v.filter((_,i)=>SM_SP[i][1]),nor=s.v.filter((_,i)=>!SM_SP[i][1]),md=dys.reduce((a,b)=>a+b,0)/dys.length,mn=nor.reduce((a,b)=>a+b,0)/nor.length,idx=md-mn;
+    c.strokeStyle=line;c.beginPath();c.moveTo(xo+20,Y(0));c.lineTo(xo+half-14,Y(0));c.stroke();
+    c.font=font(12,0,600);c.fillStyle=ink;c.textAlign="left";c.textBaseline="middle";c.fillText(L(s.n),xo+20,12);
+    s.v.forEach((v,i)=>{const x=xo+26+i*(bw+6);c.fillStyle=SM_SP[i][1]?bad:ok;c.globalAlpha=0.8;c.fillRect(x,Math.min(Y(0),Y(v)),bw,Math.abs(Y(v)-Y(0)));c.globalAlpha=1;
+      c.save();c.translate(x+bw/2,Y(-3.4));c.rotate(-Math.PI/5);c.font="italic "+font(10,0);c.fillStyle=ink3;c.textAlign="right";c.fillText(SM_SP[i][0],0,0);c.restore()});
+    c.font=font(12,1,600);c.fillStyle=idx>0?bad:ok;c.textAlign="left";c.fillText("SMDI = "+md.toFixed(2)+" − ("+mn.toFixed(2)+") = "+(idx>0?"+":"")+idx.toFixed(2),xo+20,30)});
+  c.font=font(10.5,0);c.fillStyle=ink3;c.textAlign="center";c.fillText(L({zh:"红 = 牙周炎相关物种，绿 = 健康相关物种；柱高 = CLR（示意数字，真实指数用 49 个物种）",en:"red = periodontitis-linked species, green = health-linked; bar height = CLR (illustrative; the real index uses 49 species)"}),w/2,h-8);
+}
+onRedraw(()=>{blOptions();drawBlast();drawSmdi()});
+blOptions();drawBlast();drawSmdi();
+let blSeen=false;inView($("#blCv"),v=>{if(v&&!blSeen){blSeen=true;blReplay()}});
+</script>
