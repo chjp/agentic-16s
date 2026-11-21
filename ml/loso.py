@@ -4,7 +4,7 @@
 Reads samples and labels from analysis.ml_samples and genus counts from analysis.genus_counts
 (PostgreSQL), then reports:
   * leave-one-study-out (LOSO): train on all studies but one, test on the held-out one. This is the
-    main score (proj.md): a random split would reward recognizing which study a sample came from.
+    main score (README.md): a random split would reward recognizing which study a sample came from.
   * within-study cross-validation, grouped by subject/family (cv_group), as a reference. The gap
     between the two is what crossing studies (region, platform, lab) costs.
   * a label-permutation baseline for the LOSO logistic regression.

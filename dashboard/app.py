@@ -49,6 +49,7 @@ def table(df, height=None, **kw):
 # ------------------------------------------------------------------ sidebar
 st.sidebar.title("agentic-16s")
 st.sidebar.caption("Read-only view of the `agentic16s` database. Data refreshes every minute.")
+st.sidebar.caption("Research use only: not a medical device and not for diagnosis or treatment decisions.")
 page = st.sidebar.radio("Page", ["Overview", "Studies", "Samples", "Cohorts", "Fields", "Open questions", "Bioinformatics",
                                  "Model: IBD vs healthy"])
 if st.sidebar.button("Refresh now"):

@@ -6,6 +6,8 @@ Give it a disease name. It finds the papers, reads them, locates the per-sample 
 
 > **Status: MVP in progress.** Five IBD studies run end to end (curated labels → ampliseq → PostgreSQL → classifier and dashboard); the LLM extraction layer is still a prototype. The [roadmap](#roadmap) tracks what exists.
 
+> **Research software only.** This is not a medical device and is not intended for diagnosis, treatment, or any clinical decision. The disease-vs-healthy classifiers measure how well public 16S data separate groups across studies; they are not validated diagnostic tests.
+
 ## Why this project
 
 Thousands of 16S studies have deposited raw reads in public archives, but reusing them across studies is slow manual work:
@@ -202,6 +204,16 @@ Live task-level status is on the progress board, [`plan-progress.html`](plan-pro
 
 [Qiita](https://qiita.ucsd.edu/), [GMrepo](https://gmrepo.humangut.info/), and [MicrobiomeDB](https://microbiomedb.org/) offer curated microbiome datasets built largely by manual curation. This project asks a different question: how far an LLM agent can automate that curation, with measured accuracy and evidence for every extracted fact.
 
+## Data sources and acknowledgements
+
+This repository contains code and documentation only. It does not contain sequencing reads, paper text, supplementary files, or per-sample metadata; the pipeline downloads them from their sources when it runs.
+
+- **Sequencing reads and sample attributes** come from the [NCBI Sequence Read Archive](https://www.ncbi.nlm.nih.gov/sra) and the [European Nucleotide Archive](https://www.ebi.ac.uk/ena). They were deposited by the authors of each study; cite the original study (by its PMID, recorded with every study) when using results derived from it.
+- **Case/control labels and study details** are taken from the published papers and their supplements. Paper text is read locally and never redistributed.
+- **Literature search** uses [Europe PMC](https://europepmc.org/) and [PubMed](https://pubmed.ncbi.nlm.nih.gov/); free full text comes from the PMC Open Access subset or legal free copies listed by [Unpaywall](https://unpaywall.org/).
+- **Bioinformatics** runs [nf-core/ampliseq](https://nf-co.re/ampliseq) (MIT) and [nf-core/fetchngs](https://nf-co.re/fetchngs) (MIT) on [Nextflow](https://www.nextflow.io/), with [DADA2](https://benjjneb.github.io/dada2/) for denoising.
+- **Taxonomy** uses the [SILVA](https://www.arb-silva.de/) rRNA database (CC BY 4.0), which is downloaded at run time and not included here. Please cite SILVA and nf-core/ampliseq as their authors request when publishing results.
+
 ## License
 
-To be decided.
+Code and documentation are released under the [MIT License](LICENSE). The data the pipeline downloads remain under the terms of their original sources.

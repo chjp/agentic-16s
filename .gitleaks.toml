@@ -1,0 +1,8 @@
+# gitleaks (CI job "secrets"): the default rules, plus the throwaway Postgres login that exists only
+# inside the CI job (.github/workflows/ci.yml), which is not a secret.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "CI-only Postgres container login"
+regexes = ['''postgresql://ci:ci@localhost''']

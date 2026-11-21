@@ -11,7 +11,7 @@
 name = "agentic-16s"
 version = "0.1.0"
 description = "LLM-driven pipeline that turns published 16S rRNA microbiome studies into an analysis-ready database"
-readme = "proj.md"
+readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []
 

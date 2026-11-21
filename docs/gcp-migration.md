@@ -21,7 +21,7 @@
 | Google Cloud credit（Developer Program premium） | **有用，但额度小** | 拿来付普通 VM、磁盘和 GCS Standard 存储的钱（Spot 不行，见 1.1）。不要用来开 Cloud SQL 或常驻 VM |
 | Colab 200 compute units/月 | 部分有用 | CPU 运行时每小时耗的 CU 很少，GPU（尤其 A100）耗得很快。DADA2 和 Cutadapt 都只用 CPU，**GPU 对本项目没用** |
 | 5 TB Drive | 有用（备份） | 存 `tables/`、MultiQC 报告、数据库 dump。不要拿 Drive 当 Nextflow 的工作目录，挂载后又慢又不稳 |
-| Gemini / AI Studio 额度 | 可选 | proj.md 设计成 provider-agnostic，可以用 Gemini 在 gold set 上做模型对比，算一个加分项 |
+| Gemini / AI Studio 额度 | 可选 | README.md 设计成 provider-agnostic，可以用 Gemini 在 gold set 上做模型对比，算一个加分项 |
 | Antigravity、Gemini in Android Studio 等其他权益 | 无关 | |
 
 ### 1.1 Cloud credit 核实结果（2026-11-15）
